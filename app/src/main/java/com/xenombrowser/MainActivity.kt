@@ -121,7 +121,7 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, req: WebResourceRequest): WebResourceResponse? {
                 val host = req.url.host ?: return null
-                if (adDomains.any { host == it || host.endsWith(".${"$"}it") })
+                if (adDomains.any { host == it || host.endsWith(".$it") })
                     return WebResourceResponse("text/plain", "utf-8", "".byteInputStream())
                 return null
             }
@@ -189,11 +189,11 @@ class MainActivity : AppCompatActivity() {
     private fun enterLink() {
         setMode(Mode.LINK)
         webView.evaluateJavascript("window._xb?window._xb.nav('down'):'EMPTY'") { r ->
-            val lbl = r?.trim()?.removeSurrounding(""") ?: ""
+            val lbl = r?.trim()?.removeSurrounding("\"") ?: ""
             when {
                 lbl == "EMPTY" -> { hint("Нет элементов"); handler.postDelayed({setMode(Mode.SCROLL)}, 1500) }
                 lbl.startsWith("SCROLL_") -> setMode(Mode.SCROLL)
-                else -> hint("🔗 ${"$"}lbl  •  ОК — открыть  •  НАЗАД — выход")
+                else -> hint("🔗 $lbl  •  ОК — открыть  •  НАЗАД — выход")
             }
         }
     }
@@ -207,7 +207,7 @@ class MainActivity : AppCompatActivity() {
         cursorX = (cursorX+dx).coerceIn(0f, webFrame.width.toFloat())
         cursorY = (cursorY+dy).coerceIn(0f, webFrame.height.toFloat())
         updateCursorPos()
-        webView.evaluateJavascript("window._xb?window._xb.linkAt(${"$"}cursorX,${"$"}cursorY):false") { r ->
+        webView.evaluateJavascript("window._xb?window._xb.linkAt($cursorX,$cursorY):false") { r ->
             cursorView.alpha = if (r?.trim() == "true") 1f else 0.65f
         }
     }
@@ -218,8 +218,8 @@ class MainActivity : AppCompatActivity() {
         val up = MotionEvent.obtain(now, now+80, MotionEvent.ACTION_UP, cursorX, cursorY, 0)
         webView.dispatchTouchEvent(dn)
         handler.postDelayed({ webView.dispatchTouchEvent(up); dn.recycle(); up.recycle() }, 80)
-        webView.evaluateJavascript("window._xb?window._xb.clickAt(${"$"}cursorX,${"$"}cursorY):'MISS'") { r ->
-            if (r?.trim()?.removeSurrounding(""") == "INPUT") showKeyboard()
+        webView.evaluateJavascript("window._xb?window._xb.clickAt($cursorX,$cursorY):'MISS'") { r ->
+            if (r?.trim()?.removeSurrounding("\"") == "INPUT") showKeyboard()
         }
     }
 
@@ -274,7 +274,7 @@ class MainActivity : AppCompatActivity() {
             }
             Mode.LINK -> {
                 webView.evaluateJavascript("window._xb?window._xb.act():'NONE'") { r ->
-                    val res = r?.trim()?.removeSurrounding(""") ?: "NONE"
+                    val res = r?.trim()?.removeSurrounding("\"") ?: "NONE"
                     setMode(Mode.SCROLL)
                     when {
                         res == "INPUT" -> { handler.postDelayed({showKeyboard()}, 300); hint("⌨ Введите текст и нажмите Enter") }
@@ -288,15 +288,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun linkNav(dir: String): Boolean {
-        webView.evaluateJavascript("window._xb?window._xb.nav('${"$"}dir'):'EMPTY'") { r ->
-            val lbl = r?.trim()?.removeSurrounding(""") ?: "EMPTY"
+        webView.evaluateJavascript("window._xb?window._xb.nav('$dir'):'EMPTY'") { r ->
+            val lbl = r?.trim()?.removeSurrounding("\"") ?: "EMPTY"
             when {
                 lbl == "EMPTY" -> { exitToScroll(); hint("Нет элементов") }
                 lbl.startsWith("SCROLL_") -> when (lbl.removePrefix("SCROLL_")) {
                     "up"->webView.scrollBy(0,-250); "down"->webView.scrollBy(0,250)
                     "left"->webView.scrollBy(-250,0); "right"->webView.scrollBy(250,0)
                 }
-                else -> hint("🔗 ${"$"}lbl  •  ОК — открыть  •  НАЗАД — выход")
+                else -> hint("🔗 $lbl  •  ОК — открыть  •  НАЗАД — выход")
             }
         }
         return true
@@ -319,8 +319,8 @@ class MainActivity : AppCompatActivity() {
         if (input.isEmpty()) return
         val url = when {
             input.startsWith("http://") || input.startsWith("https://") -> input
-            input.contains(".") && !input.contains(" ") && input.length > 3 -> "https://${"$"}input"
-            else -> "https://yandex.ru/search/?text=${"$"}{Uri.encode(input)}&lr=213"
+            input.contains(".") && !input.contains(" ") && input.length > 3 -> "https://$input"
+            else -> "https://yandex.ru/search/?text=${Uri.encode(input)}&lr=213"
         }
         webView.loadUrl(url); setMode(Mode.SCROLL)
     }
