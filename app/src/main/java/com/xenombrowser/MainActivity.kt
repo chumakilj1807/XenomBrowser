@@ -233,7 +233,7 @@ class MainActivity : AppCompatActivity() {
     private fun enterElements() {
         setMode(Mode.LINK)
         webView.evaluateJavascript("window._xb?window._xb.nav('down'):'EMPTY'") { r ->
-            val lbl = r?.trim()?.removeSurrounding(""") ?: ""
+            val lbl = r?.trim()?.removeSurrounding("\"") ?: ""
             when {
                 lbl == "EMPTY" -> { hint("Нет элементов на странице"); handler.postDelayed({setMode(Mode.SCROLL)}, 1500) }
                 lbl.startsWith("SCROLL_") -> setMode(Mode.SCROLL)
@@ -257,7 +257,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun moveResults(dir: Int) {
         webView.evaluateJavascript("window._xb?window._xb.results.move($dir):'EMPTY'") { r ->
-            val title = r?.trim()?.removeSurrounding(""") ?: "EMPTY"
+            val title = r?.trim()?.removeSurrounding("\"") ?: "EMPTY"
             when {
                 title == "EMPTY" -> { exitToScroll(); hint("Конец результатов") }
                 else -> hint("📋 $title  •  ОК — открыть  •  НАЗАД — выход")
@@ -508,7 +508,7 @@ class MainActivity : AppCompatActivity() {
                     if ((r?.trim()?.toIntOrNull() ?: 0) > 0) hint("📢 Реклама — нажмите ОК для пропуска")
                 }
                 webView.evaluateJavascript("window._xb?window._xb.checkVideoFullscreen():null") { r ->
-                    val src = r?.trim()?.removeSurrounding(""")
+                    val src = r?.trim()?.removeSurrounding("\"")
                     if (!src.isNullOrEmpty() && src != "null" && src != "FULLSCREEN" && src != autoVideoUrl) {
                         autoVideoUrl = src
                         autoVideoTimer?.let { handler.removeCallbacks(it) }
