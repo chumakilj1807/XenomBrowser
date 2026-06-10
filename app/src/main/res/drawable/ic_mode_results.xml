@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp" android:height="16dp"
+    android:viewportWidth="16" android:viewportHeight="16">
+    <!-- Three horizontal bars = search results list -->
+    <path android:pathData="M2,3 H14 V5 H2 Z" android:fillColor="#00FF88"/>
+    <path android:pathData="M2,7 H10 V9 H2 Z" android:fillColor="#00FF88"/>
+    <path android:pathData="M2,11 H12 V13 H2 Z" android:fillColor="#00FF88"/>
+</vector>

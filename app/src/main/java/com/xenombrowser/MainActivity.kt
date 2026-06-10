@@ -17,7 +17,7 @@ import androidx.recyclerview.widget.RecyclerView
 
 class MainActivity : AppCompatActivity() {
 
-    private enum class Mode { SCROLL, LINK, CURSOR }
+    private enum class Mode { SCROLL, LINK, RESULTS, CURSOR }
     private var mode = Mode.SCROLL
 
     private lateinit var webView: WebView
@@ -48,6 +48,8 @@ class MainActivity : AppCompatActivity() {
     private val CURSOR_STEP = 10
     private var pendingVideoUrl: String? = null
     private var webInputMode = false
+    private var autoVideoUrl: String? = null
+    private var autoVideoTimer: Runnable? = null
     private var webInputCx = 0f
     private var webInputCy = 0f
     private var webInputHint = ""
@@ -84,7 +86,18 @@ class MainActivity : AppCompatActivity() {
     skip:function(doClick){var playing=Array.from(document.querySelectorAll('video')).some(function(v){return!v.paused&&!v.ended&&v.readyState>2;});if(!playing)return 0;var found=[];['.ytp-skip-ad-button','[class*="skip-ad"]','[class*="SkipAd"]','[id*="skip-ad"]','.ad-skip-button','.videoAdUiSkipButton','[data-purpose="skip-button"]','.ytp-ad-skip-button-modern'].forEach(function(s){try{Array.from(document.querySelectorAll(s)).filter(function(el){return window._xb.vis(el);}).forEach(function(el){found.push(el);});}catch(e){}});if(!found.length){var texts=['пропустить','skip ad','skip ads','skip','close ad'];Array.from(document.querySelectorAll('button,[role="button"],div,span')).filter(function(el){var t=el.textContent.trim().toLowerCase();return texts.some(function(s){return t===s||t.startsWith(s+'.');})&&window._xb.vis(el);}).forEach(function(el){found.push(el);});}if(doClick&&found.length){found[0].click();return-1;}return found.length;},
     clickAt:function(x,y){var el=document.elementFromPoint(x,y);if(!el)return'MISS';['mousedown','mouseup','click'].forEach(function(evt){el.dispatchEvent(new MouseEvent(evt,{bubbles:true,cancelable:true,clientX:x,clientY:y,view:window}));});var tag=el.tagName.toLowerCase();if(tag==='input'||tag==='textarea'||tag==='select'){el.focus();return'INPUT';}var inp=el.querySelector('input,textarea');if(inp){inp.focus();return'INPUT';}return'CLICKED';},
     linkAt:function(x,y){var el=document.elementFromPoint(x,y);if(!el)return false;var tag=el.tagName.toLowerCase();if(['a','button','input','textarea','select','video','audio'].indexOf(tag)>=0)return true;if(el.onclick||el.getAttribute('role')==='button')return true;return getComputedStyle(el).cursor==='pointer';},
-    injectText:function(x,y,text){var el=document.elementFromPoint(x,y)||document.activeElement;if(!el||(el.tagName!=='INPUT'&&el.tagName!=='TEXTAREA')){el=document.querySelector('input:not([type="hidden"]):not([disabled]),textarea');}if(!el)return false;el.focus();try{var proto=el.tagName==='INPUT'?HTMLInputElement.prototype:HTMLTextAreaElement.prototype;var ns=Object.getOwnPropertyDescriptor(proto,'value');if(ns&&ns.set)ns.set.call(el,text);else el.value=text;}catch(e){el.value=text;}el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:13,bubbles:true,cancelable:true}));el.dispatchEvent(new KeyboardEvent('keypress',{key:'Enter',keyCode:13,bubbles:true,cancelable:true}));el.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',keyCode:13,bubbles:true,cancelable:true}));setTimeout(function(){var form=el.closest('form');if(form){try{form.submit();}catch(e){}}var btn=document.querySelector('[type="submit"],.search__button,.Button2[type="submit"],button[data-type="search"],input[type="submit"]');if(btn)btn.click();},80);return true;}
+    injectText:function(x,y,text){var el=document.elementFromPoint(x,y)||document.activeElement;if(!el||(el.tagName!=='INPUT'&&el.tagName!=='TEXTAREA')){el=document.querySelector('input:not([type="hidden"]):not([disabled]),textarea');}if(!el)return false;el.focus();try{var proto=el.tagName==='INPUT'?HTMLInputElement.prototype:HTMLTextAreaElement.prototype;var ns=Object.getOwnPropertyDescriptor(proto,'value');if(ns&&ns.set)ns.set.call(el,text);else el.value=text;}catch(e){el.value=text;}el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:13,bubbles:true,cancelable:true}));el.dispatchEvent(new KeyboardEvent('keypress',{key:'Enter',keyCode:13,bubbles:true,cancelable:true}));el.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',keyCode:13,bubbles:true,cancelable:true}));setTimeout(function(){var form=el.closest('form');if(form){try{form.submit();}catch(e){}}var btn=document.querySelector('[type="submit"],.search__button,.Button2[type="submit"],button[data-type="search"],input[type="submit"]');if(btn)btn.click();},80);return true;},
+    results:{
+      idx:-1,list:[],
+      sels:['.organic','.serp-item','.OrganicResult','.commercial','.video-snippet','.VideoDesktopSerp','.g:not(.g-blk)','.MjjYud','[data-hveid]'].join(','),
+      collect:function(){try{return Array.from(document.querySelectorAll(this.sels)).filter(function(el){var r=el.getBoundingClientRect();return r.height>40&&r.width>80&&r.bottom>0&&r.top<window.innerHeight;});}catch(e){return[];}},
+      hl:function(el){document.querySelectorAll('[data-xbr]').forEach(function(e){e.style.outline=e._xbRO||'';e.removeAttribute('data-xbr');});if(!el)return'';el._xbRO=el.style.outline||'';el.style.outline='3px solid #00FF88';el.setAttribute('data-xbr','1');el.scrollIntoView({block:'center',behavior:'smooth'});var t=el.querySelector('h2,h3,.OrganicTitle,.organic__title,.title,a')||el;return(t.textContent||'').trim().replace(/\s+/g,' ').substring(0,80);},
+      clear:function(){document.querySelectorAll('[data-xbr]').forEach(function(e){e.style.outline=e._xbRO||'';e.removeAttribute('data-xbr');});this.idx=-1;this.list=[];},
+      enter:function(){this.list=this.collect();this.idx=-1;return this.list.length;},
+      move:function(dir){if(!this.list.length)this.list=this.collect();if(!this.list.length)return'EMPTY';this.idx+=dir;if(this.idx<0)this.idx=0;if(this.idx>=this.list.length)this.idx=this.list.length-1;return this.hl(this.list[this.idx]);},
+      click:function(){if(this.idx<0||!this.list[this.idx])return false;var el=this.list[this.idx];this.clear();var link=el.querySelector('a[href]')||el;['mousedown','mouseup','click'].forEach(function(t){link.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window}));});return true;}
+    },
+    checkVideoFullscreen:function(){var vs=document.querySelectorAll('video');var best=null,bc=0;for(var i=0;i<vs.length;i++){var v=vs[i];if(v.readyState<2||v.ended||v.paused)continue;var r=v.getBoundingClientRect();var c=(r.width/window.innerWidth)*(r.height/window.innerHeight);if(c>bc){bc=c;best=v;}}if(!best||bc<0.35)return null;var src=best.currentSrc||best.src||'';if(src&&!src.startsWith('blob:')&&!src.startsWith('data:'))return src;return bc>0.6?'FULLSCREEN':null;}
   };
   if(window._xbObs){window._xbObs.disconnect();}
   window._xbObs=new MutationObserver(function(){document.querySelectorAll('video[src]:not([data-xb-seen])').forEach(function(v){v.setAttribute('data-xb-seen','1');var src=v.currentSrc||v.src||'';if(src&&!src.startsWith('blob:')&&typeof XenomBridge!=='undefined'){try{XenomBridge.onVideoFound(src);}catch(e){}}});});
@@ -192,10 +205,11 @@ class MainActivity : AppCompatActivity() {
         when (m) {
             Mode.SCROLL -> {
                 ivModeIcon.setImageResource(R.drawable.ic_mode_scroll)
-                hint("↕ Прокрутка  •  ОК — выбор  •  удержать ОК — курсор")
+                hint("← ссылки  •  → результаты поиска  •  ОК — выбор  •  удержать ОК — курсор")
                 cursorView.visibility = View.GONE
             }
             Mode.LINK   -> ivModeIcon.setImageResource(R.drawable.ic_mode_link)
+            Mode.RESULTS -> ivModeIcon.setImageResource(R.drawable.ic_mode_results)
             Mode.CURSOR -> {
                 ivModeIcon.setImageResource(R.drawable.ic_mode_cursor)
                 hint("⊚ Курсор  •  стрелки — движение  •  ОК — нажать  •  НАЗАД — выход")
@@ -216,8 +230,43 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun enterElements() {
+        setMode(Mode.LINK)
+        webView.evaluateJavascript("window._xb?window._xb.nav('down'):'EMPTY'") { r ->
+            val lbl = r?.trim()?.removeSurrounding(""") ?: ""
+            when {
+                lbl == "EMPTY" -> { hint("Нет элементов на странице"); handler.postDelayed({setMode(Mode.SCROLL)}, 1500) }
+                lbl.startsWith("SCROLL_") -> setMode(Mode.SCROLL)
+                else -> hint("🔗 $lbl  •  ↑↓ навигация  •  ОК — открыть  •  НАЗАД — выход")
+            }
+        }
+    }
+
+    private fun enterResults() {
+        webView.evaluateJavascript("window._xb?window._xb.results.enter():0") { r ->
+            val count = r?.trim()?.toIntOrNull() ?: 0
+            if (count > 0) {
+                setMode(Mode.RESULTS)
+                moveResults(1)
+            } else {
+                hint("Результатов поиска не найдено — скролл вправо")
+                webView.scrollBy(250, 0)
+            }
+        }
+    }
+
+    private fun moveResults(dir: Int) {
+        webView.evaluateJavascript("window._xb?window._xb.results.move($dir):'EMPTY'") { r ->
+            val title = r?.trim()?.removeSurrounding(""") ?: "EMPTY"
+            when {
+                title == "EMPTY" -> { exitToScroll(); hint("Конец результатов") }
+                else -> hint("📋 $title  •  ОК — открыть  •  НАЗАД — выход")
+            }
+        }
+    }
+
     private fun exitToScroll() {
-        webView.evaluateJavascript("if(window._xb)window._xb.clr()", null)
+        webView.evaluateJavascript("if(window._xb){window._xb.clr();if(window._xb.results)window._xb.results.clear();}", null)
         webView.isFocusable = false
         webView.isFocusableInTouchMode = false
         setMode(Mode.SCROLL)
@@ -268,7 +317,11 @@ class MainActivity : AppCompatActivity() {
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
         if (etUrl.isFocused) return when (code) {
             KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_BACK -> {
-                if (webInputMode) cancelWebInput() else { dismissKeyboard(); webView.requestFocus() }
+                if (webInputMode) cancelWebInput()
+                else {
+                    dismissKeyboard()
+                    hint("← ссылки  •  → результаты поиска  •  ОК — выбор  •  удержать ОК — курсор")
+                }
                 true
             }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
@@ -283,14 +336,14 @@ class MainActivity : AppCompatActivity() {
             return super.dispatchKeyEvent(event)
         }
         return when (code) {
-            KeyEvent.KEYCODE_DPAD_UP    -> when (mode) { Mode.SCROLL->{ if (webView.scrollY<=0) focusUrlBar() else webView.scrollBy(0,-250); true }; Mode.LINK->linkNav("up"); Mode.CURSOR->{ moveCursor(0,-CURSOR_STEP); true } }
-            KeyEvent.KEYCODE_DPAD_DOWN  -> when (mode) { Mode.SCROLL->{ webView.scrollBy(0,250); true }; Mode.LINK->linkNav("down"); Mode.CURSOR->{ moveCursor(0,CURSOR_STEP); true } }
-            KeyEvent.KEYCODE_DPAD_LEFT  -> when (mode) { Mode.SCROLL->{ webView.scrollBy(-250,0); true }; Mode.LINK->linkNav("left"); Mode.CURSOR->{ moveCursor(-CURSOR_STEP,0); true } }
-            KeyEvent.KEYCODE_DPAD_RIGHT -> when (mode) { Mode.SCROLL->{ webView.scrollBy(250,0); true }; Mode.LINK->linkNav("right"); Mode.CURSOR->{ moveCursor(CURSOR_STEP,0); true } }
+            KeyEvent.KEYCODE_DPAD_UP    -> when (mode) { Mode.SCROLL->{ if (webView.scrollY<=0) focusUrlBar() else webView.scrollBy(0,-250); true }; Mode.LINK->linkNav("up"); Mode.RESULTS->{ moveResults(-1); true }; Mode.CURSOR->{ moveCursor(0,-CURSOR_STEP); true } }
+            KeyEvent.KEYCODE_DPAD_DOWN  -> when (mode) { Mode.SCROLL->{ webView.scrollBy(0,250); true }; Mode.LINK->linkNav("down"); Mode.RESULTS->{ moveResults(1); true }; Mode.CURSOR->{ moveCursor(0,CURSOR_STEP); true } }
+            KeyEvent.KEYCODE_DPAD_LEFT  -> when (mode) { Mode.SCROLL->{ enterElements(); true }; Mode.LINK->linkNav("left"); Mode.RESULTS->{ exitToScroll(); true }; Mode.CURSOR->{ moveCursor(-CURSOR_STEP,0); true } }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> when (mode) { Mode.SCROLL->{ enterResults(); true }; Mode.LINK->linkNav("right"); Mode.RESULTS->{ webView.scrollBy(250,0); true }; Mode.CURSOR->{ moveCursor(CURSOR_STEP,0); true } }
             KeyEvent.KEYCODE_BACK -> when (mode) {
-                Mode.LINK, Mode.CURSOR -> { exitToScroll(); true }
+                Mode.LINK, Mode.RESULTS, Mode.CURSOR -> { exitToScroll(); true }
                 Mode.SCROLL -> when {
-                    webView.canGoBack() -> { webView.goBack(); true }
+                    webView.canGoBack() -> { autoVideoTimer?.let { handler.removeCallbacks(it) }; autoVideoUrl = null; webView.goBack(); true }
                     else -> { val now=System.currentTimeMillis(); if (now-lastBackTime<2000) { finish(); true } else { lastBackTime=now; Toast.makeText(this,"Нажмите ещё раз для выхода",Toast.LENGTH_SHORT).show(); true } }
                 }
             }
@@ -306,7 +359,7 @@ class MainActivity : AppCompatActivity() {
                     if ((r?.trim()?.toIntOrNull() ?: 0) > 0) {
                         webView.evaluateJavascript("window._xb.skip(true)", null)
                         hint("Реклама пропущена ✓")
-                    } else enterLink()
+                    } else enterElements()
                 }
             }
             Mode.LINK -> {
@@ -325,6 +378,9 @@ class MainActivity : AppCompatActivity() {
                         res.startsWith("AUDIO:") -> openInPlayer(res.removePrefix("AUDIO:"), true)
                     }
                 }
+            }
+            Mode.RESULTS -> {
+                webView.evaluateJavascript("window._xb?window._xb.results.click():false") { exitToScroll() }
             }
             Mode.CURSOR -> clickAtCursor()
         }
@@ -447,10 +503,28 @@ class MainActivity : AppCompatActivity() {
 
     private fun startSkipChecker() {
         skipChecker = object : Runnable { override fun run() {
-            if (mode == Mode.SCROLL) webView.evaluateJavascript("window._xb?window._xb.skip(false):0") { r ->
-                if ((r?.trim()?.toIntOrNull() ?: 0) > 0) hint("📢 Реклама — нажмите ОК для пропуска")
+            if (mode == Mode.SCROLL) {
+                webView.evaluateJavascript("window._xb?window._xb.skip(false):0") { r ->
+                    if ((r?.trim()?.toIntOrNull() ?: 0) > 0) hint("📢 Реклама — нажмите ОК для пропуска")
+                }
+                webView.evaluateJavascript("window._xb?window._xb.checkVideoFullscreen():null") { r ->
+                    val src = r?.trim()?.removeSurrounding(""")
+                    if (!src.isNullOrEmpty() && src != "null" && src != "FULLSCREEN" && src != autoVideoUrl) {
+                        autoVideoUrl = src
+                        autoVideoTimer?.let { handler.removeCallbacks(it) }
+                        autoVideoTimer = Runnable {
+                            if (autoVideoUrl != null && mode == Mode.SCROLL) {
+                                hint("▶ Открываю видео в плеере...")
+                                openInPlayer(autoVideoUrl!!, false)
+                                autoVideoUrl = null
+                            }
+                        }
+                        handler.postDelayed(autoVideoTimer!!, 2500)
+                        hint("▶ Видео найдено — автозапуск через 2с  •  НАЗАД — отмена")
+                    }
+                }
             }
-            handler.postDelayed(this, 1500)
+            handler.postDelayed(this, 2000)
         } }
         handler.postDelayed(skipChecker!!, 2000)
     }
@@ -466,6 +540,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         skipChecker?.let { handler.removeCallbacks(it) }
+        autoVideoTimer?.let { handler.removeCallbacks(it) }
         webView.destroy()
         @Suppress("DEPRECATION") wakeLock?.takeIf { it.isHeld }?.release()
     }
