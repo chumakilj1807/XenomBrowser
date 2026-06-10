@@ -50,7 +50,7 @@
     <path android:pathData="M228,112 L228,100 L220,112" android:strokeColor="#004466" android:strokeWidth="2" android:fillColor="#00000000"/>
 
     <!-- "enom" text hint: three dots to suggest "enom" -->
-    <path android:pathData="M244,45 L244,105" android:strokeColor="#00496A" android:strokeWidth="1" android:strokeDashArray="4,4"/>
+    <path android:pathData="M244,45 L244,105" android:strokeColor="#00496A" android:strokeWidth="1"/>
 
     <!-- "BROWSER" label area: thin cyan line + dots -->
     <path android:pathData="M165,125 L300,125" android:strokeColor="#00496A" android:strokeWidth="1"/>
