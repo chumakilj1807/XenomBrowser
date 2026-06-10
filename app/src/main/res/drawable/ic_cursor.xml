@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="44dp" android:height="44dp"
+    android:viewportWidth="44" android:viewportHeight="44">
+    <!-- Outer circle -->
+    <path android:pathData="M22,4 A18,18 0 1 1 21.9,4 Z"
+        android:fillColor="#00000000" android:strokeColor="#FF6600" android:strokeWidth="2.5"/>
+    <!-- Cross lines -->
+    <path android:pathData="M22,10 L22,18" android:strokeColor="#FF6600" android:strokeWidth="2" android:strokeLineCap="round"/>
+    <path android:pathData="M22,26 L22,34" android:strokeColor="#FF6600" android:strokeWidth="2" android:strokeLineCap="round"/>
+    <path android:pathData="M10,22 L18,22" android:strokeColor="#FF6600" android:strokeWidth="2" android:strokeLineCap="round"/>
+    <path android:pathData="M26,22 L34,22" android:strokeColor="#FF6600" android:strokeWidth="2" android:strokeLineCap="round"/>
+    <!-- Center dot -->
+    <path android:pathData="M22,19 A3,3 0 1 1 21.9,19 Z" android:fillColor="#FF6600"/>
+</vector>

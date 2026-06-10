@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="180dp"
+    android:viewportWidth="320" android:viewportHeight="180">
+
+    <!-- Background -->
+    <path android:pathData="M0,0H320V180H0Z" android:fillColor="#0D1117"/>
+    <!-- Subtle left glow -->
+    <path android:pathData="M0,0H180V180H0Z" android:fillColor="#080F18"/>
+
+    <!-- Decorative dots grid (right half) -->
+    <path android:pathData="M200,20 A2,2 0 1 1 199.9,20Z M220,20 A2,2 0 1 1 219.9,20Z M240,20 A2,2 0 1 1 239.9,20Z M260,20 A2,2 0 1 1 259.9,20Z M280,20 A2,2 0 1 1 279.9,20Z M300,20 A2,2 0 1 1 299.9,20Z" android:fillColor="#0D2030"/>
+    <path android:pathData="M200,40 A2,2 0 1 1 199.9,40Z M220,40 A2,2 0 1 1 219.9,40Z M240,40 A2,2 0 1 1 239.9,40Z M260,40 A2,2 0 1 1 259.9,40Z M280,40 A2,2 0 1 1 279.9,40Z M300,40 A2,2 0 1 1 299.9,40Z" android:fillColor="#0D2030"/>
+    <path android:pathData="M200,60 A2,2 0 1 1 199.9,60Z M220,60 A2,2 0 1 1 219.9,60Z M240,60 A2,2 0 1 1 239.9,60Z M260,60 A2,2 0 1 1 259.9,60Z M280,60 A2,2 0 1 1 279.9,60Z M300,60 A2,2 0 1 1 299.9,60Z" android:fillColor="#0D2030"/>
+    <path android:pathData="M200,80 A2,2 0 1 1 199.9,80Z M220,80 A2,2 0 1 1 219.9,80Z M240,80 A2,2 0 1 1 239.9,80Z M260,80 A2,2 0 1 1 259.9,80Z M280,80 A2,2 0 1 1 279.9,80Z M300,80 A2,2 0 1 1 299.9,80Z" android:fillColor="#0D2030"/>
+    <path android:pathData="M200,100 A2,2 0 1 1 199.9,100Z M220,100 A2,2 0 1 1 219.9,100Z M240,100 A2,2 0 1 1 239.9,100Z" android:fillColor="#0D2030"/>
+
+    <!-- Globe icon: center (80,90), radius 58 -->
+    <!-- Outer circle glow (slightly larger) -->
+    <path android:pathData="M80,28 A62,62 0 1 1 79.9,28 Z"
+        android:fillColor="#00000000" android:strokeColor="#003355" android:strokeWidth="6"/>
+    <!-- Main globe circle -->
+    <path android:pathData="M80,32 A58,58 0 1 1 79.9,32 Z"
+        android:fillColor="#080F18" android:strokeColor="#00B4FF" android:strokeWidth="2"/>
+    <!-- Equator line -->
+    <path android:pathData="M22,90 L138,90" android:strokeColor="#00B4FF" android:strokeWidth="1.5"/>
+    <!-- Prime meridian ellipse -->
+    <path android:pathData="M80,32 Q108,54 108,90 Q108,126 80,148 Q52,126 52,90 Q52,54 80,32 Z"
+        android:fillColor="#00000000" android:strokeColor="#00B4FF" android:strokeWidth="1.5"/>
+    <!-- Latitude curves: upper third -->
+    <path android:pathData="M36,65 Q80,54 124,65"
+        android:fillColor="#00000000" android:strokeColor="#00496A" android:strokeWidth="1"/>
+    <!-- Latitude curves: lower third -->
+    <path android:pathData="M36,115 Q80,126 124,115"
+        android:fillColor="#00000000" android:strokeColor="#00496A" android:strokeWidth="1"/>
+    <!-- Cursor arrow inside globe -->
+    <path android:pathData="M72,85 L92,90 L72,95 L77,90 Z" android:fillColor="#00B4FF"/>
+
+    <!-- Vertical divider line -->
+    <path android:pathData="M154,20 L154,160" android:strokeColor="#1A2535" android:strokeWidth="1"/>
+
+    <!-- "X" large letter: center around (195,75) -->
+    <path android:pathData="M172,45 L218,105" android:strokeColor="#00B4FF" android:strokeWidth="10" android:strokeLineCap="round"/>
+    <path android:pathData="M218,45 L172,105" android:strokeColor="#00B4FF" android:strokeWidth="10" android:strokeLineCap="round"/>
+
+    <!-- Decorative bracket lines around X -->
+    <path android:pathData="M162,38 L162,50 L170,38" android:strokeColor="#004466" android:strokeWidth="2" android:fillColor="#00000000"/>
+    <path android:pathData="M228,38 L228,50 L220,38" android:strokeColor="#004466" android:strokeWidth="2" android:fillColor="#00000000"/>
+    <path android:pathData="M162,112 L162,100 L170,112" android:strokeColor="#004466" android:strokeWidth="2" android:fillColor="#00000000"/>
+    <path android:pathData="M228,112 L228,100 L220,112" android:strokeColor="#004466" android:strokeWidth="2" android:fillColor="#00000000"/>
+
+    <!-- "enom" text hint: three dots to suggest "enom" -->
+    <path android:pathData="M244,45 L244,105" android:strokeColor="#00496A" android:strokeWidth="1" android:strokeDashArray="4,4"/>
+
+    <!-- "BROWSER" label area: thin cyan line + dots -->
+    <path android:pathData="M165,125 L300,125" android:strokeColor="#00496A" android:strokeWidth="1"/>
+    <!-- 7 small rectangles suggesting "BROWSER" characters -->
+    <path android:pathData="M165,132 H177 V140 H165Z" android:fillColor="#00B4FF" android:fillAlpha="0.6"/>
+    <path android:pathData="M181,132 H193 V140 H181Z" android:fillColor="#00B4FF" android:fillAlpha="0.5"/>
+    <path android:pathData="M197,132 H209 V140 H197Z" android:fillColor="#00B4FF" android:fillAlpha="0.5"/>
+    <path android:pathData="M213,132 H225 V140 H213Z" android:fillColor="#00B4FF" android:fillAlpha="0.45"/>
+    <path android:pathData="M229,132 H241 V140 H229Z" android:fillColor="#00B4FF" android:fillAlpha="0.4"/>
+    <path android:pathData="M245,132 H257 V140 H245Z" android:fillColor="#00B4FF" android:fillAlpha="0.35"/>
+    <path android:pathData="M261,132 H273 V140 H261Z" android:fillColor="#00B4FF" android:fillAlpha="0.3"/>
+
+    <!-- Bottom glow line -->
+    <path android:pathData="M0,170 H320" android:strokeColor="#00B4FF" android:strokeWidth="1" android:strokeAlpha="0.3"/>
+
+</vector>

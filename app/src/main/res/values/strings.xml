@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Xenom Browser</string>
+    <string name="search_hint">Поиск или адрес сайта…</string>
+    <string name="hint_scroll">↕ Прокрутка  •  ОК — выбор  •  удержать ОК — курсор</string>
+    <string name="bookmarks">Закладки</string>
+    <string name="bookmark_added">Закладка добавлена ★</string>
+    <string name="bookmark_removed">Закладка удалена</string>
+</resources>

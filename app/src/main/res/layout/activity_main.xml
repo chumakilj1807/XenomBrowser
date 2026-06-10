@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg">
+
+    <LinearLayout android:id="@+id/nav_bar"
+        android:layout_width="match_parent" android:layout_height="52dp"
+        android:background="@color/surface" android:orientation="horizontal"
+        android:gravity="center_vertical" android:paddingStart="8dp" android:paddingEnd="8dp" android:elevation="4dp">
+        <ImageButton android:id="@+id/btn_back" android:layout_width="40dp" android:layout_height="40dp"
+            android:src="@drawable/ic_nav_back" android:background="@drawable/bg_nav_btn"
+            android:focusable="false" android:contentDescription="Back" android:alpha="0.35"/>
+        <ImageButton android:id="@+id/btn_forward" android:layout_width="40dp" android:layout_height="40dp"
+            android:src="@drawable/ic_nav_forward" android:background="@drawable/bg_nav_btn"
+            android:focusable="false" android:contentDescription="Forward" android:layout_marginStart="2dp" android:alpha="0.35"/>
+        <ImageButton android:id="@+id/btn_reload" android:layout_width="40dp" android:layout_height="40dp"
+            android:src="@drawable/ic_nav_reload" android:background="@drawable/bg_nav_btn"
+            android:focusable="false" android:contentDescription="Reload" android:layout_marginStart="2dp"/>
+        <EditText android:id="@+id/et_url" android:layout_width="0dp" android:layout_height="36dp"
+            android:layout_weight="1" android:layout_marginStart="8dp" android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_url_bar" android:hint="@string/search_hint"
+            android:textColorHint="@color/text_hint" android:textColor="@color/text" android:textSize="13sp"
+            android:paddingStart="14dp" android:paddingEnd="14dp" android:singleLine="true"
+            android:imeOptions="actionGo|flagNoFullscreen" android:inputType="text|textUri"
+            android:focusable="true" android:focusableInTouchMode="true" android:selectAllOnFocus="true"/>
+        <ImageButton android:id="@+id/btn_bookmark_add" android:layout_width="40dp" android:layout_height="40dp"
+            android:src="@drawable/ic_bookmark_off" android:background="@drawable/bg_nav_btn"
+            android:focusable="false" android:contentDescription="Bookmark"/>
+        <ImageButton android:id="@+id/btn_menu" android:layout_width="40dp" android:layout_height="40dp"
+            android:src="@drawable/ic_menu" android:background="@drawable/bg_nav_btn"
+            android:focusable="false" android:contentDescription="Menu" android:layout_marginStart="2dp"/>
+    </LinearLayout>
+
+    <ProgressBar android:id="@+id/progress_bar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent" android:layout_height="3dp"
+        android:progressTint="@color/brand" android:progressBackgroundTint="@color/surface"
+        android:max="100" android:visibility="gone"/>
+
+    <LinearLayout android:id="@+id/status_bar"
+        android:layout_width="match_parent" android:layout_height="28dp"
+        android:background="@color/surface_dim" android:orientation="horizontal"
+        android:gravity="center_vertical" android:paddingStart="12dp" android:paddingEnd="12dp">
+        <ImageView android:id="@+id/iv_mode_icon" android:layout_width="14dp" android:layout_height="14dp"
+            android:src="@drawable/ic_mode_scroll" android:layout_marginEnd="8dp"/>
+        <TextView android:id="@+id/tv_status" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:textColor="@color/text_hint" android:textSize="11sp"
+            android:singleLine="true" android:ellipsize="end" android:text="@string/hint_scroll"/>
+    </LinearLayout>
+
+    <FrameLayout android:id="@+id/web_frame"
+        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+        <WebView android:id="@+id/web_view"
+            android:layout_width="match_parent" android:layout_height="match_parent"
+            android:focusable="false" android:focusableInTouchMode="false"/>
+        <ImageView android:id="@+id/cursor_view"
+            android:layout_width="44dp" android:layout_height="44dp"
+            android:src="@drawable/ic_cursor" android:visibility="gone"
+            android:alpha="0.9" android:elevation="10dp"/>
+        <LinearLayout android:id="@+id/panel_side"
+            android:layout_width="300dp" android:layout_height="match_parent"
+            android:layout_gravity="end" android:background="@color/surface"
+            android:orientation="vertical" android:elevation="8dp"
+            android:visibility="gone" android:padding="16dp">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/bookmarks" android:textColor="@color/text"
+                android:textSize="15sp" android:textStyle="bold" android:paddingBottom="12dp"/>
+            <androidx.recyclerview.widget.RecyclerView android:id="@+id/rv_bookmarks"
+                android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>
+        </LinearLayout>
+    </FrameLayout>
+
+</LinearLayout>

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="#000000">
+
+    <androidx.media3.ui.PlayerView android:id="@+id/player_view"
+        android:layout_width="match_parent" android:layout_height="match_parent"/>
+
+    <!-- Controls overlay -->
+    <LinearLayout android:id="@+id/controls_overlay"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_gravity="bottom" android:orientation="vertical"
+        android:background="#CC000000" android:padding="16dp" android:visibility="visible">
+
+        <SeekBar android:id="@+id/seek_bar"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:progressTint="@color/brand" android:thumbTint="@color/brand"
+            android:focusable="false"/>
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:gravity="center_vertical"
+            android:layout_marginTop="8dp">
+            <TextView android:id="@+id/tv_position"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#FFFFFF" android:textSize="14sp" android:text="0:00"/>
+            <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1"/>
+            <TextView android:id="@+id/tv_duration"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="#AAAAAA" android:textSize="14sp" android:text="0:00"/>
+        </LinearLayout>
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:gravity="center" android:layout_marginTop="4dp">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="@color/text_hint" android:textSize="11sp"
+                android:text="← -30с  •  ОК пауза  •  → +30с  •  НАЗАД выход"/>
+        </LinearLayout>
+
+    </LinearLayout>
+
+</FrameLayout>
