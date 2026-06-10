@@ -45,8 +45,12 @@ class MainActivity : AppCompatActivity() {
     private var lastBackTime = 0L
     private var cursorX = 0f
     private var cursorY = 0f
-    private val CURSOR_STEP = 50
+    private val CURSOR_STEP = 10
     private var pendingVideoUrl: String? = null
+    private var webInputMode = false
+    private var webInputCx = 0f
+    private var webInputCy = 0f
+    private var webInputHint = ""
     private var wakeLock: PowerManager.WakeLock? = null
     private var customView: View? = null
     private var customViewCb: WebChromeClient.CustomViewCallback? = null
@@ -55,6 +59,19 @@ class MainActivity : AppCompatActivity() {
 
     private val INJECT_JS = """
 (function(){
+  if(!window._xbNet){
+    window._xbNet=true;
+    function _xbVid(url){
+      if(!url||url.indexOf('blob:')==0||url.indexOf('data:')==0)return;
+      var l=url.toLowerCase();
+      var ok=l.indexOf('.m3u8')>=0||l.indexOf('.mpd')>=0||l.indexOf('/master.')>=0||
+             (l.indexOf('video')>=0&&l.indexOf('.ts')>=0);
+      if(ok&&typeof XenomBridge!=='undefined'){try{XenomBridge.onVideoFound(url);}catch(e){}}
+    }
+    var _xo=XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open=function(m,u){_xbVid(typeof u==='string'?u:'');return _xo.apply(this,arguments);};
+    if(window.fetch){var _xf=window.fetch;window.fetch=function(i,o){_xbVid(typeof i==='string'?i:(i&&i.url)||'');return _xf.apply(this,arguments);};}
+  }
   if(window._xb)return;
   window._xb={
     cur:null,
@@ -63,10 +80,11 @@ class MainActivity : AppCompatActivity() {
     hl:function(el){this.clr();if(!el)return'';el._o=el.style.outline||'';el._oo=el.style.outlineOffset||'';el.style.outline='3px solid #00B4FF';el.style.outlineOffset='2px';el.setAttribute('data-xb','1');el.scrollIntoView({block:'nearest',behavior:'smooth',inline:'nearest'});var t=el.tagName.toLowerCase();if(t==='input'||t==='textarea')return el.placeholder||el.name||'Поле ввода';if(t==='video')return'▶ Видео';if(t==='audio')return'♪ Аудио';return(el.title||el.textContent||el.alt||el.value||el.getAttribute('href')||'').trim().replace(/\s+/g,' ').substring(0,80);},
     clr:function(){var el=document.querySelector('[data-xb]');if(el){el.style.outline=el._o||'';el.style.outlineOffset=el._oo||'';el.removeAttribute('data-xb');}},
     nav:function(dir){var els=this.all();if(!els.length)return'EMPTY';if(!this.cur||!document.body.contains(this.cur)){this.cur=els.reduce(function(a,b){var ra=a.getBoundingClientRect(),rb=b.getBoundingClientRect();return(ra.top*3+ra.left)<(rb.top*3+rb.left)?a:b;});return this.hl(this.cur);}var cr=this.cur.getBoundingClientRect(),cx=cr.left+cr.width/2,cy=cr.top+cr.height/2;var cands=els.filter(function(el){if(el===window._xb.cur)return false;var r=el.getBoundingClientRect(),ex=r.left+r.width/2,ey=r.top+r.height/2;if(dir==='right')return ex>cx+8;if(dir==='left')return ex<cx-8;if(dir==='down')return ey>cy+8;if(dir==='up')return ey<cy-8;return false;});if(!cands.length)return'SCROLL_'+dir;var best=cands.reduce(function(a,b){var ra=a.getBoundingClientRect(),rb=b.getBoundingClientRect(),ax=ra.left+ra.width/2,ay=ra.top+ra.height/2,bx=rb.left+rb.width/2,by=rb.top+rb.height/2,sa,sb;if(dir==='right'||dir==='left'){sa=Math.abs(ax-cx)+Math.abs(ay-cy)*2.5;sb=Math.abs(bx-cx)+Math.abs(by-cy)*2.5;}else{sa=Math.abs(ay-cy)+Math.abs(ax-cx)*2.5;sb=Math.abs(by-cy)+Math.abs(bx-cx)*2.5;}return sa<sb?a:b;});this.cur=best;return this.hl(best);},
-    act:function(){if(!this.cur)return'NONE';var el=this.cur;this.clr();this.cur=null;var tag=el.tagName.toLowerCase();if(tag==='input'||tag==='textarea'||tag==='select'){el.focus();var r2=el.getBoundingClientRect();return'INPUT:'+Math.round(r2.left+r2.width/2)+':'+Math.round(r2.top+r2.height/2);}var inp=el.querySelector('input:not([type="hidden"]),textarea');if(inp&&window._xb.vis(inp)){inp.focus();var ri=inp.getBoundingClientRect();return'INPUT:'+Math.round(ri.left+ri.width/2)+':'+Math.round(ri.top+ri.height/2);}if(tag==='video'){var src=el.currentSrc||el.src||'';if(src&&!src.startsWith('blob:'))return'VIDEO:'+src;if(el.paused)el.play();else el.pause();return'VIDEO_TOGGLE';}if(tag==='audio'){var src2=el.currentSrc||el.src||'';if(src2&&!src2.startsWith('blob:'))return'AUDIO:'+src2;if(el.paused)el.play();else el.pause();return'AUDIO_TOGGLE';}var r=el.getBoundingClientRect(),mx=r.left+r.width/2,my=r.top+r.height/2;['mousedown','mouseup','click'].forEach(function(evt){el.dispatchEvent(new MouseEvent(evt,{bubbles:true,cancelable:true,clientX:mx,clientY:my,view:window}));});return el.href||el.getAttribute('href')||el.textContent.trim().substring(0,60)||'CLICKED';},
+    act:function(){if(!this.cur)return'NONE';var el=this.cur;this.clr();this.cur=null;var tag=el.tagName.toLowerCase();if(tag==='input'||tag==='textarea'||tag==='select'){el.focus();var r2=el.getBoundingClientRect();var ph2=el.placeholder||el.getAttribute('aria-label')||el.name||'Поле ввода';return'INPUT:'+Math.round(r2.left+r2.width/2)+':'+Math.round(r2.top+r2.height/2)+':'+ph2.substring(0,40);}var inp=el.querySelector('input:not([type="hidden"]),textarea');if(inp&&window._xb.vis(inp)){inp.focus();var ri=inp.getBoundingClientRect();var phi=inp.placeholder||inp.getAttribute('aria-label')||inp.name||'Поле ввода';return'INPUT:'+Math.round(ri.left+ri.width/2)+':'+Math.round(ri.top+ri.height/2)+':'+phi.substring(0,40);}if(tag==='video'){var src=el.currentSrc||el.src||'';if(src&&!src.startsWith('blob:'))return'VIDEO:'+src;if(el.paused)el.play();else el.pause();return'VIDEO_TOGGLE';}if(tag==='audio'){var src2=el.currentSrc||el.src||'';if(src2&&!src2.startsWith('blob:'))return'AUDIO:'+src2;if(el.paused)el.play();else el.pause();return'AUDIO_TOGGLE';}var r=el.getBoundingClientRect(),mx=r.left+r.width/2,my=r.top+r.height/2;['mousedown','mouseup','click'].forEach(function(evt){el.dispatchEvent(new MouseEvent(evt,{bubbles:true,cancelable:true,clientX:mx,clientY:my,view:window}));});return el.href||el.getAttribute('href')||el.textContent.trim().substring(0,60)||'CLICKED';},
     skip:function(doClick){var playing=Array.from(document.querySelectorAll('video')).some(function(v){return!v.paused&&!v.ended&&v.readyState>2;});if(!playing)return 0;var found=[];['.ytp-skip-ad-button','[class*="skip-ad"]','[class*="SkipAd"]','[id*="skip-ad"]','.ad-skip-button','.videoAdUiSkipButton','[data-purpose="skip-button"]','.ytp-ad-skip-button-modern'].forEach(function(s){try{Array.from(document.querySelectorAll(s)).filter(function(el){return window._xb.vis(el);}).forEach(function(el){found.push(el);});}catch(e){}});if(!found.length){var texts=['пропустить','skip ad','skip ads','skip','close ad'];Array.from(document.querySelectorAll('button,[role="button"],div,span')).filter(function(el){var t=el.textContent.trim().toLowerCase();return texts.some(function(s){return t===s||t.startsWith(s+'.');})&&window._xb.vis(el);}).forEach(function(el){found.push(el);});}if(doClick&&found.length){found[0].click();return-1;}return found.length;},
     clickAt:function(x,y){var el=document.elementFromPoint(x,y);if(!el)return'MISS';['mousedown','mouseup','click'].forEach(function(evt){el.dispatchEvent(new MouseEvent(evt,{bubbles:true,cancelable:true,clientX:x,clientY:y,view:window}));});var tag=el.tagName.toLowerCase();if(tag==='input'||tag==='textarea'||tag==='select'){el.focus();return'INPUT';}var inp=el.querySelector('input,textarea');if(inp){inp.focus();return'INPUT';}return'CLICKED';},
-    linkAt:function(x,y){var el=document.elementFromPoint(x,y);if(!el)return false;var tag=el.tagName.toLowerCase();if(['a','button','input','textarea','select','video','audio'].indexOf(tag)>=0)return true;if(el.onclick||el.getAttribute('role')==='button')return true;return getComputedStyle(el).cursor==='pointer';}
+    linkAt:function(x,y){var el=document.elementFromPoint(x,y);if(!el)return false;var tag=el.tagName.toLowerCase();if(['a','button','input','textarea','select','video','audio'].indexOf(tag)>=0)return true;if(el.onclick||el.getAttribute('role')==='button')return true;return getComputedStyle(el).cursor==='pointer';},
+    injectText:function(x,y,text){var el=document.elementFromPoint(x,y)||document.activeElement;if(!el||(el.tagName!=='INPUT'&&el.tagName!=='TEXTAREA')){el=document.querySelector('input:not([type="hidden"]):not([disabled]),textarea');}if(!el)return false;el.focus();try{var proto=el.tagName==='INPUT'?HTMLInputElement.prototype:HTMLTextAreaElement.prototype;var ns=Object.getOwnPropertyDescriptor(proto,'value');if(ns&&ns.set)ns.set.call(el,text);else el.value=text;}catch(e){el.value=text;}el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:13,bubbles:true,cancelable:true}));el.dispatchEvent(new KeyboardEvent('keypress',{key:'Enter',keyCode:13,bubbles:true,cancelable:true}));el.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',keyCode:13,bubbles:true,cancelable:true}));setTimeout(function(){var form=el.closest('form');if(form){try{form.submit();}catch(e){}}var btn=document.querySelector('[type="submit"],.search__button,.Button2[type="submit"],button[data-type="search"],input[type="submit"]');if(btn)btn.click();},80);return true;}
   };
   if(window._xbObs){window._xbObs.disconnect();}
   window._xbObs=new MutationObserver(function(){document.querySelectorAll('video[src]:not([data-xb-seen])').forEach(function(v){v.setAttribute('data-xb-seen','1');var src=v.currentSrc||v.src||'';if(src&&!src.startsWith('blob:')&&typeof XenomBridge!=='undefined'){try{XenomBridge.onVideoFound(src);}catch(e){}}});});
@@ -249,8 +267,15 @@ class MainActivity : AppCompatActivity() {
         }
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
         if (etUrl.isFocused) return when (code) {
-            KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_BACK -> { dismissKeyboard(); webView.requestFocus(); true }
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { navigate(etUrl.text.toString().trim()); dismissKeyboard(); true }
+            KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_BACK -> {
+                if (webInputMode) cancelWebInput() else { dismissKeyboard(); webView.requestFocus() }
+                true
+            }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                val text = etUrl.text.toString().trim()
+                if (webInputMode) submitWebInput(text) else navigate(text)
+                true
+            }
             else -> super.dispatchKeyEvent(event)
         }
         if (panelSide.visibility == View.VISIBLE) {
@@ -290,15 +315,11 @@ class MainActivity : AppCompatActivity() {
                     setMode(Mode.SCROLL)
                     when {
                         res.startsWith("INPUT") -> {
-                            val parts = res.split(":")
-                            val cx = parts.getOrNull(1)?.toFloatOrNull()
-                            val cy = parts.getOrNull(2)?.toFloatOrNull()
-                            if (cx != null && cy != null) {
-                                handler.postDelayed({ tapWebViewInput(cx, cy) }, 150)
-                            } else {
-                                handler.postDelayed({ showKeyboard() }, 300)
-                            }
-                            hint("⌨ Введите текст — нажмите Enter для поиска")
+                            val parts = res.split(":", limit = 4)
+                            val cx = parts.getOrNull(1)?.toFloatOrNull() ?: 0f
+                            val cy = parts.getOrNull(2)?.toFloatOrNull() ?: 0f
+                            val fieldHint = parts.getOrNull(3) ?: "Введите текст"
+                            activateWebInput(fieldHint, cx, cy)
                         }
                         res.startsWith("VIDEO:") -> openInPlayer(res.removePrefix("VIDEO:"), false)
                         res.startsWith("AUDIO:") -> openInPlayer(res.removePrefix("AUDIO:"), true)
@@ -333,7 +354,9 @@ class MainActivity : AppCompatActivity() {
         etUrl.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) etUrl.post { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(etUrl, InputMethodManager.SHOW_FORCED) } }
         etUrl.setOnEditorActionListener { _, actionId, _ ->
             if (actionId in listOf(EditorInfo.IME_ACTION_GO, EditorInfo.IME_ACTION_SEARCH, EditorInfo.IME_ACTION_DONE)) {
-                navigate(etUrl.text.toString().trim()); dismissKeyboard(); true
+                val text = etUrl.text.toString().trim()
+                if (webInputMode) submitWebInput(text) else navigate(text)
+                true
             } else false
         }
     }
@@ -357,36 +380,48 @@ class MainActivity : AppCompatActivity() {
         webView.isFocusable = true
         webView.isFocusableInTouchMode = true
         webView.requestFocus()
-        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.showSoftInput(webView, InputMethodManager.SHOW_FORCED)
+        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+            .showSoftInput(webView, InputMethodManager.SHOW_FORCED)
     }
 
-    @Suppress("DEPRECATION")
-    private fun tapWebViewInput(jsX: Float, jsY: Float) {
-        // jsX/jsY are CSS viewport coords from getBoundingClientRect()
-        // Multiply by current scale to get WebView view-local pixel coords
-        val scale = webView.scale.takeIf { it > 0f } ?: 1f
-        val px = jsX * scale
-        val py = jsY * scale
+    private fun activateWebInput(fieldHint: String, cx: Float, cy: Float) {
+        webInputMode = true
+        webInputCx = cx
+        webInputCy = cy
+        webInputHint = fieldHint
+        val savedUrl = webView.url ?: ""
+        etUrl.tag = savedUrl
+        etUrl.setText("")
+        etUrl.hint = "Поиск: $fieldHint"
+        focusUrlBar()
+        hint("⌨ $fieldHint  •  введите и нажмите ОК  •  НАЗАД — отмена")
+    }
 
-        webView.isFocusable = true
-        webView.isFocusableInTouchMode = true
+    private fun submitWebInput(text: String) {
+        webInputMode = false
+        val cx = webInputCx
+        val cy = webInputCy
+        val escaped = text.replace("\\", "\\\\").replace("'", "\\'")
+        webView.evaluateJavascript("window._xb?window._xb.injectText($cx,$cy,'$escaped'):false") {
+            handler.postDelayed({
+                val savedUrl = etUrl.tag as? String ?: ""
+                etUrl.setText(savedUrl)
+                etUrl.hint = getString(R.string.search_hint)
+                etUrl.tag = null
+            }, 600)
+        }
+        dismissKeyboard()
         webView.requestFocus()
+    }
 
-        val now = SystemClock.uptimeMillis()
-        val dn = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, px, py, 0)
-        val up = MotionEvent.obtain(now, now + 100, MotionEvent.ACTION_UP, px, py, 0)
-        webView.dispatchTouchEvent(dn)
-        handler.postDelayed({
-            webView.dispatchTouchEvent(up)
-            dn.recycle(); up.recycle()
-        }, 100)
-
-        // Force keyboard after touch settles
-        handler.postDelayed({
-            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(webView, InputMethodManager.SHOW_FORCED)
-        }, 350)
+    private fun cancelWebInput() {
+        webInputMode = false
+        val savedUrl = etUrl.tag as? String ?: webView.url ?: ""
+        etUrl.setText(savedUrl)
+        etUrl.hint = getString(R.string.search_hint)
+        etUrl.tag = null
+        dismissKeyboard()
+        webView.requestFocus()
     }
 
     private fun setupButtons() {
