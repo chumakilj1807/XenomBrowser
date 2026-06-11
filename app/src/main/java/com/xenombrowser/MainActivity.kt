@@ -117,6 +117,9 @@ class MainActivity : AppCompatActivity() {
         bindViews(); loadAdDomains(); setupWebView(); setupUrlBar()
         setupButtons(); setupCursor(); startSkipChecker()
         webView.loadUrl("https://ya.ru"); setMode(Mode.SCROLL)
+
+        // Start AirPlay receiver — runs as long as the app is in foreground
+        startForegroundService(Intent(this, AirPlayService::class.java))
     }
 
     private fun bindViews() {
@@ -543,6 +546,7 @@ class MainActivity : AppCompatActivity() {
         autoVideoTimer?.let { handler.removeCallbacks(it) }
         webView.destroy()
         @Suppress("DEPRECATION") wakeLock?.takeIf { it.isHeld }?.release()
+        stopService(Intent(this, AirPlayService::class.java))
     }
 
     inner class BookmarkAdapter(
