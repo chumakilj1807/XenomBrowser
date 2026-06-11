@@ -21,7 +21,7 @@ class SettingsActivity : AppCompatActivity() {
         scroll.addView(root)
         setContentView(scroll)
 
-        root.addView(title("⚙ Настройки", 26))
+        root.addView(title("⚙ Настройки", 26f))
 
         // Search engine
         root.addView(section("Поисковая система"))

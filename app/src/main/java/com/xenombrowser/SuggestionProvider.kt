@@ -24,17 +24,18 @@ object SuggestionProvider {
     }
 
     // Suggest APIs return: ["query", ["s1","s2",...], ...]
-    private fun parse(text: String): List<String> = try {
-        val arr = JSONArray(text.trim())
-        val list = arr.optJSONArray(1) ?: return emptyList()
-        (0 until minOf(list.length(), 8)).map { list.getString(it) }
-    } catch (_: Exception) {
-        // DuckDuckGo list format: [{"phrase":"..."}]
-        try {
+    private fun parse(text: String): List<String> {
+        return try {
             val arr = JSONArray(text.trim())
-            (0 until minOf(arr.length(), 8)).mapNotNull {
-                arr.optJSONObject(it)?.optString("phrase")
-            }.filter { it.isNotBlank() }
+            val list = arr.optJSONArray(1)
+            if (list != null) {
+                (0 until minOf(list.length(), 8)).map { list.getString(it) }
+            } else {
+                // DuckDuckGo list format: [{"phrase":"..."}]
+                (0 until minOf(arr.length(), 8)).mapNotNull {
+                    arr.optJSONObject(it)?.optString("phrase")
+                }.filter { it.isNotBlank() }
+            }
         } catch (_: Exception) { emptyList() }
     }
 }
