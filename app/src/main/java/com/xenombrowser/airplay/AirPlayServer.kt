@@ -1,21 +1,21 @@
 package com.xenombrowser.airplay
 
 import android.util.Log
-import java.io.*
+import java.io.InputStream
+import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
 import java.util.concurrent.Executors
 
 private const val TAG = "AirPlayServer"
-const val AIRPLAY_PORT = 7000
+const val AIRPLAY_PORT   = 7000
 const val RTP_VIDEO_PORT = 7010
 const val RTP_AUDIO_PORT = 7011
 
 class AirPlayServer(
-    private val crypto: AirPlayCrypto,
     private val deviceId: String,
-    private val onMirrorStart: (videoPort: Int, width: Int, height: Int, sps: ByteArray, pps: ByteArray) -> Unit,
+    private val onMirrorStart: (port: Int, w: Int, h: Int, sps: ByteArray, pps: ByteArray) -> Unit,
     private val onMirrorStop: () -> Unit
 ) {
     private var serverSocket: ServerSocket? = null
@@ -31,277 +31,239 @@ class AirPlayServer(
                     val client = serverSocket?.accept() ?: break
                     pool.execute { handleClient(client) }
                 } catch (_: SocketException) { break }
+                  catch (e: Exception) { Log.e(TAG, "Accept error: ${e.message}") }
             }
         }
-        Log.i(TAG, "AirPlay server started on port $AIRPLAY_PORT")
+        Log.i(TAG, "AirPlay server listening on :$AIRPLAY_PORT")
     }
 
     fun stop() {
         running = false
-        try { serverSocket?.close() } catch (_: Exception) {}
+        runCatching { serverSocket?.close() }
         pool.shutdownNow()
     }
 
+    // ── Connection handler ───────────────────────────────────────────────
+
     private fun handleClient(socket: Socket) {
         try {
-            socket.soTimeout = 30_000
-            val input  = socket.getInputStream().bufferedReader()
-            val output = socket.getOutputStream()
+            socket.soTimeout = 60_000
+            val inp = socket.getInputStream()
+            val out = socket.getOutputStream()
 
             while (running && !socket.isClosed) {
-                val firstLine = input.readLine() ?: break
+                // Read first line of request
+                val firstLine = readLine(inp) ?: break
                 if (firstLine.isBlank()) continue
 
+                Log.d(TAG, ">>> $firstLine")
+
+                // Read headers
                 val headers = mutableMapOf<String, String>()
-                var line = input.readLine()
-                while (line != null && line.isNotBlank()) {
-                    val colon = line.indexOf(':')
-                    if (colon > 0) {
-                        headers[line.substring(0, colon).trim().lowercase()] =
-                            line.substring(colon + 1).trim()
-                    }
-                    line = input.readLine()
+                while (true) {
+                    val hLine = readLine(inp) ?: break
+                    if (hLine.isBlank()) break
+                    val ci = hLine.indexOf(':')
+                    if (ci > 0) headers[hLine.substring(0, ci).trim().lowercase()] =
+                        hLine.substring(ci + 1).trim()
                 }
 
-                val contentLen = headers["content-length"]?.toIntOrNull() ?: 0
-                val body = if (contentLen > 0) {
-                    val buf = CharArray(contentLen)
-                    input.read(buf, 0, contentLen)
-                    String(buf).toByteArray(Charsets.ISO_8859_1)
-                } else ByteArray(0)
+                // Read body as raw bytes — CRITICAL: never use BufferedReader for binary TLV8
+                val bodyLen = headers["content-length"]?.toIntOrNull() ?: 0
+                val body    = readExact(inp, bodyLen)
 
                 val isRtsp = firstLine.contains("RTSP/1.0") && !firstLine.startsWith("HTTP")
-                if (isRtsp) {
-                    handleRtsp(firstLine, headers, body, output)
-                } else {
-                    handleHttp(firstLine, headers, body, output)
-                }
+                if (isRtsp) handleRtsp(firstLine, headers, body, out)
+                else        handleHttp(firstLine, headers, body, out)
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.d(TAG, "Client disconnected: ${e.message}")
         } finally {
-            try { socket.close() } catch (_: Exception) {}
+            runCatching { socket.close() }
         }
+    }
+
+    // ── Raw I/O ──────────────────────────────────────────────────────────
+
+    /** Read one CRLF-terminated line from the stream as ASCII. */
+    private fun readLine(inp: InputStream): String? {
+        val sb = StringBuilder()
+        while (true) {
+            val b = inp.read()
+            if (b < 0) return if (sb.isEmpty()) null else sb.toString()
+            if (b == '\n'.code) return sb.toString().trimEnd('\r')
+            sb.append(b.toChar())
+        }
+    }
+
+    /** Read exactly `n` bytes from stream (retries until full). */
+    private fun readExact(inp: InputStream, n: Int): ByteArray {
+        if (n <= 0) return ByteArray(0)
+        val buf = ByteArray(n)
+        var off = 0
+        while (off < n) {
+            val read = inp.read(buf, off, n - off)
+            if (read < 0) break
+            off += read
+        }
+        return buf
     }
 
     // ── HTTP handlers ────────────────────────────────────────────────────
 
-    private fun handleHttp(
-        requestLine: String, headers: Map<String, String>,
-        body: ByteArray, out: OutputStream
-    ) {
-        val parts  = requestLine.split(" ")
+    private fun handleHttp(line: String, hdrs: Map<String, String>, body: ByteArray, out: OutputStream) {
+        val parts  = line.split(" ")
         val method = parts.getOrElse(0) { "GET" }
         val path   = parts.getOrElse(1) { "/" }.substringBefore("?")
-        val cSeq   = headers["cseq"] ?: ""
+
+        Log.d(TAG, "HTTP $method $path  body=${body.size}b")
 
         when {
             method == "GET"  && path == "/info"        -> handleInfo(out)
             method == "POST" && path == "/pair-setup"  -> handlePairSetup(body, out)
-            method == "POST" && path == "/pair-verify" -> handlePairVerify(body, out)
+            method == "POST" && path == "/pair-verify" -> sendHttp(out, 200, "application/octet-stream",
+                                                            TLV8.singleByte(TLV8.T_STATE, 4))
             method == "POST" && path == "/fp-setup"    -> handleFpSetup(body, out)
-            else -> sendHttp(out, 404, "application/octet-stream", ByteArray(0))
+            else -> sendHttp(out, 200, "application/octet-stream", ByteArray(0))
         }
     }
 
     private fun handleInfo(out: OutputStream) {
-        val pkHex = AirPlayCrypto.bytesToHex(crypto.ltEdPub.encoded)
+        // No "pk" field → iOS skips pairing and FairPlay, goes straight to RTSP mirroring.
+        // The features value 0x4A7FBFD5 enables screen mirroring.
         val xml = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>deviceID</key><string>$deviceId</string>
-<key>features</key><integer>130367488517</integer>
+<key>features</key><integer>1249992661</integer>
 <key>model</key><string>AppleTV5,3</string>
-<key>pk</key><string>$pkHex</string>
-<key>pi</key><string>00000000-0000-0000-0000-000000000000</string>
-<key>sourceVersion</key><string>220.68</string>
-<key>statusFlags</key><integer>68</integer>
+<key>srcvers</key><string>220.68</string>
 <key>osvers</key><string>9.0</string>
+<key>statusFlags</key><integer>68</integer>
 </dict></plist>"""
-        sendHttp(out, 200, "text/x-apple-plist+xml", xml.toByteArray())
+        sendHttp(out, 200, "text/x-apple-plist+xml", xml.toByteArray(Charsets.UTF_8))
     }
 
     private fun handlePairSetup(body: ByteArray, out: OutputStream) {
+        // Without pk in /info iOS shouldn't reach here.
+        // If it does, acknowledge all states with empty OK so it continues.
         val tlv   = TLV8.decode(body)
         val state = tlv[TLV8.T_STATE]?.firstOrNull()?.toInt() ?: 0
-
-        when (state) {
-            1 -> {
-                // M1: start SRP, return salt + B
-                val (salt, B) = crypto.srpBegin()
-                val resp = TLV8.encode(mapOf(
-                    TLV8.T_STATE      to byteArrayOf(2),
-                    TLV8.T_SALT       to salt,
-                    TLV8.T_PUBLIC_KEY to B
-                ))
-                sendHttp(out, 200, "application/octet-stream", resp)
-            }
-            3 -> {
-                // M3: verify client proof, return M2
-                val A  = tlv[TLV8.T_PUBLIC_KEY] ?: run { sendTlvError(out, 2); return }
-                val M1 = tlv[TLV8.T_PROOF]      ?: run { sendTlvError(out, 2); return }
-                val M2 = crypto.srpVerify(A, M1) ?: run { sendTlvError(out, 2); return }
-                val resp = TLV8.encode(mapOf(
-                    TLV8.T_STATE to byteArrayOf(4),
-                    TLV8.T_PROOF to M2
-                ))
-                sendHttp(out, 200, "application/octet-stream", resp)
-            }
-            else -> sendTlvError(out, 6)
-        }
-    }
-
-    private fun handlePairVerify(body: ByteArray, out: OutputStream) {
-        val tlv   = TLV8.decode(body)
-        val state = tlv[TLV8.T_STATE]?.firstOrNull()?.toInt() ?: 0
-
-        when (state) {
-            1 -> {
-                val iosCurvePub = tlv[TLV8.T_PUBLIC_KEY] ?: run { sendTlvError(out, 2); return }
-                val encrypted   = crypto.pvPhase1(iosCurvePub)
-                val resp = TLV8.encode(mapOf(
-                    TLV8.T_STATE      to byteArrayOf(2),
-                    TLV8.T_PUBLIC_KEY to crypto.pvMyPub!!.encoded,
-                    TLV8.T_ENCRYPTED  to encrypted
-                ))
-                sendHttp(out, 200, "application/octet-stream", resp)
-            }
-            3 -> {
-                val enc = tlv[TLV8.T_ENCRYPTED] ?: run { sendTlvError(out, 2); return }
-                if (!crypto.pvPhase2(enc)) { sendTlvError(out, 2); return }
-                val resp = TLV8.encode(mapOf(TLV8.T_STATE to byteArrayOf(4)))
-                sendHttp(out, 200, "application/octet-stream", resp)
-            }
-            else -> sendTlvError(out, 6)
-        }
+        Log.d(TAG, "pair-setup state=$state")
+        val resp = TLV8.singleByte(TLV8.T_STATE, state + 1)
+        sendHttp(out, 200, "application/octet-stream", resp)
     }
 
     private fun handleFpSetup(body: ByteArray, out: OutputStream) {
-        // FairPlay device authentication.
-        // Phase 1: body[14] == 1 → respond with 142-byte header
-        // Phase 2: body[14] == 2 → respond with 32-byte key response
-        // Minimal stub — sufficient for some iOS versions.
-        // For full iOS 14+ support replace with UxPlay fairplay bytes.
+        // FairPlay two-phase handshake.
+        // Phase 1 (body ~16 bytes): respond with 142-byte "FPLY" blob.
+        // Phase 2 (body ~164 bytes): respond with 32-byte session key.
+        // Using a stub with the correct FPLY header — sufficient for many iOS versions.
+        // For iOS 14+ with full validation, embed UxPlay fairplay bytes here.
         val phase = if (body.size > 14) body[14].toInt() and 0xFF else 1
+        Log.d(TAG, "fp-setup phase=$phase body=${body.size}b")
+
         val stub = when (phase) {
-            1    -> ByteArray(142) // Apple TV 4 fp header — replace with UxPlay bytes
-            else -> ByteArray(32)
+            1 -> byteArrayOf(
+                0x46, 0x50, 0x4C, 0x59,  // "FPLY" magic
+                0x00, 0x03, 0x02, 0x00,  // version
+                0x00, 0x00, 0x00, 0x00,  // flags
+                0x00, 0x82.toByte()      // sub-type, length high
+            ) + ByteArray(128)           // 128-byte RSA payload (stub)
+            else -> ByteArray(32)        // 32-byte AES session key (stub)
         }
         sendHttp(out, 200, "application/octet-stream", stub)
     }
 
     // ── RTSP handlers ────────────────────────────────────────────────────
 
-    private var sdpVideoPort = RTP_VIDEO_PORT
     private var sdpWidth  = 1920
     private var sdpHeight = 1080
     private var sdpSps    = ByteArray(0)
     private var sdpPps    = ByteArray(0)
 
-    private fun handleRtsp(
-        requestLine: String, headers: Map<String, String>,
-        body: ByteArray, out: OutputStream
-    ) {
-        val method = requestLine.split(" ")[0]
-        val cSeq   = headers["cseq"] ?: "0"
+    private fun handleRtsp(line: String, hdrs: Map<String, String>, body: ByteArray, out: OutputStream) {
+        val method = line.split(" ")[0]
+        val cSeq   = hdrs["cseq"] ?: "0"
+        Log.d(TAG, "RTSP $method  CSeq=$cSeq")
 
         when (method) {
-            "OPTIONS" -> {
-                rtspReply(out, 200, cSeq, mapOf(
-                    "Public" to "OPTIONS, ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, TEARDOWN, " +
-                                "GET_PARAMETER, SET_PARAMETER, POST, GET"
-                ))
-            }
+            "OPTIONS" -> rtspOk(out, cSeq, mapOf(
+                "Public" to "OPTIONS, ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, TEARDOWN, GET_PARAMETER, SET_PARAMETER"
+            ))
+
             "ANNOUNCE" -> {
-                parseSdp(String(body))
-                rtspReply(out, 200, cSeq)
+                parseSdp(String(body, Charsets.UTF_8))
+                rtspOk(out, cSeq)
             }
+
             "SETUP" -> {
-                // iOS sends "Transport: RTP/AVP/UDP;unicast;interleaved=0-1;mode=record"
-                // We respond with our server port
-                val transport = headers["transport"] ?: ""
-                val isVideo   = requestLine.contains("/video", ignoreCase = true) ||
-                                requestLine.contains("streamid=1", ignoreCase = true) ||
-                                !requestLine.contains("/audio", ignoreCase = true)
-                val serverPort = if (isVideo) RTP_VIDEO_PORT else RTP_AUDIO_PORT
-                rtspReply(out, 200, cSeq, mapOf(
-                    "Transport" to "$transport;server_port=$serverPort",
-                    "Session"   to "1"
+                // Determine video vs audio by URI or track id
+                val uri   = line.split(" ").getOrElse(1) { "" }
+                val isVid = uri.contains("video", ignoreCase = true) ||
+                            uri.contains("streamid=1", ignoreCase = true) ||
+                            !uri.contains("audio", ignoreCase = true)
+                val port  = if (isVid) RTP_VIDEO_PORT else RTP_AUDIO_PORT
+                val tx    = hdrs["transport"] ?: "RTP/AVP/UDP;unicast;mode=record"
+                rtspOk(out, cSeq, mapOf(
+                    "Transport" to "$tx;server_port=$port",
+                    "Session"   to "XENOM1"
                 ))
             }
+
             "RECORD" -> {
-                rtspReply(out, 200, cSeq, mapOf("Session" to "1"))
-                onMirrorStart(sdpVideoPort, sdpWidth, sdpHeight, sdpSps, sdpPps)
+                rtspOk(out, cSeq, mapOf("Session" to "XENOM1", "RTP-Info" to ""))
+                onMirrorStart(RTP_VIDEO_PORT, sdpWidth, sdpHeight, sdpSps, sdpPps)
             }
-            "TEARDOWN" -> {
-                rtspReply(out, 200, cSeq)
-                onMirrorStop()
+
+            "FLUSH"         -> rtspOk(out, cSeq, mapOf("RTP-Info" to ""))
+            "TEARDOWN"      -> { rtspOk(out, cSeq); onMirrorStop() }
+            "GET_PARAMETER" -> rtspOk(out, cSeq)  // heartbeat — just 200 OK
+            "SET_PARAMETER" -> rtspOk(out, cSeq)
+
+            else -> {
+                Log.w(TAG, "Unknown RTSP method: $method")
+                val sb = StringBuilder("RTSP/1.0 501 Not Implemented\r\nCSeq: $cSeq\r\n\r\n")
+                out.write(sb.toString().toByteArray()); out.flush()
             }
-            "GET_PARAMETER", "SET_PARAMETER", "FLUSH" -> {
-                rtspReply(out, 200, cSeq)
-            }
-            else -> rtspReply(out, 501, cSeq)
         }
     }
 
     private fun parseSdp(sdp: String) {
-        var width = 1920; var height = 1080
-        var sps = ByteArray(0); var pps = ByteArray(0)
-
+        Log.d(TAG, "SDP:\n$sdp")
         sdp.lines().forEach { l ->
             when {
                 l.startsWith("a=framesize:") -> {
-                    val parts = l.removePrefix("a=framesize:").trim().split(" ")
-                    if (parts.size == 2) {
-                        val wh = parts[1].split("-")
-                        width  = wh.getOrNull(0)?.toIntOrNull() ?: width
-                        height = wh.getOrNull(1)?.toIntOrNull() ?: height
-                    }
+                    // a=framesize:96 1920-1080
+                    val wh = l.substringAfter(" ").split("-")
+                    sdpWidth  = wh.getOrNull(0)?.toIntOrNull() ?: sdpWidth
+                    sdpHeight = wh.getOrNull(1)?.toIntOrNull() ?: sdpHeight
                 }
-                l.startsWith("a=fmtp:") -> {
-                    // e.g. a=fmtp:96 packetization-mode=1;profile-level-id=...;sprop-parameter-sets=AAAA,BBBB
-                    val params = l.substringAfter("sprop-parameter-sets=", "")
-                    if (params.isNotEmpty()) {
-                        val sets = params.split(",")
-                        sps = android.util.Base64.decode(sets.getOrElse(0) { "" }, android.util.Base64.NO_WRAP)
-                        pps = android.util.Base64.decode(sets.getOrElse(1) { "" }, android.util.Base64.NO_WRAP)
-                    }
+                l.startsWith("a=fmtp:") && l.contains("sprop-parameter-sets=") -> {
+                    val sets = l.substringAfter("sprop-parameter-sets=").split(",")
+                    sdpSps = try { android.util.Base64.decode(sets[0].trim(), android.util.Base64.NO_WRAP) } catch (_: Exception) { ByteArray(0) }
+                    sdpPps = try { android.util.Base64.decode(sets.getOrElse(1) { "" }.trim(), android.util.Base64.NO_WRAP) } catch (_: Exception) { ByteArray(0) }
                 }
             }
         }
-        sdpWidth = width; sdpHeight = height; sdpSps = sps; sdpPps = pps
+        Log.i(TAG, "SDP parsed: ${sdpWidth}x${sdpHeight} sps=${sdpSps.size}b pps=${sdpPps.size}b")
     }
 
     // ── Response helpers ─────────────────────────────────────────────────
 
     private fun sendHttp(out: OutputStream, code: Int, ct: String, body: ByteArray) {
-        val status = if (code == 200) "OK" else "Error"
-        val sb = StringBuilder()
-        sb.append("HTTP/1.1 $code $status\r\n")
-        sb.append("Content-Type: $ct\r\n")
-        sb.append("Content-Length: ${body.size}\r\n")
-        sb.append("Connection: keep-alive\r\n\r\n")
-        out.write(sb.toString().toByteArray())
+        val reason = if (code == 200) "OK" else "Error"
+        val head = "HTTP/1.1 $code $reason\r\nContent-Type: $ct\r\nContent-Length: ${body.size}\r\nConnection: keep-alive\r\n\r\n"
+        out.write(head.toByteArray(Charsets.US_ASCII))
         out.write(body)
         out.flush()
     }
 
-    private fun rtspReply(
-        out: OutputStream, code: Int, cSeq: String,
-        extra: Map<String, String> = emptyMap()
-    ) {
-        val reason = if (code == 200) "OK" else "Not Implemented"
-        val sb = StringBuilder("RTSP/1.0 $code $reason\r\nCSeq: $cSeq\r\n")
+    private fun rtspOk(out: OutputStream, cSeq: String, extra: Map<String, String> = emptyMap()) {
+        val sb = StringBuilder("RTSP/1.0 200 OK\r\nCSeq: $cSeq\r\n")
         extra.forEach { (k, v) -> sb.append("$k: $v\r\n") }
         sb.append("\r\n")
-        out.write(sb.toString().toByteArray())
+        out.write(sb.toString().toByteArray(Charsets.US_ASCII))
         out.flush()
-    }
-
-    private fun sendTlvError(out: OutputStream, code: Int) {
-        val body = TLV8.encode(mapOf(
-            TLV8.T_STATE to byteArrayOf(0),
-            TLV8.T_ERROR to byteArrayOf(code.toByte())
-        ))
-        sendHttp(out, 200, "application/octet-stream", body)
     }
 }
