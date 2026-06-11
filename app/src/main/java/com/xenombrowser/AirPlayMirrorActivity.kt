@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.view.*
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.xenombrowser.airplay.RtpReceiver
 
 class AirPlayMirrorActivity : AppCompatActivity() {
@@ -41,7 +42,8 @@ class AirPlayMirrorActivity : AppCompatActivity() {
         surfaceView = findViewById(R.id.surface_mirror)
         tvInfo      = findViewById(R.id.tv_airplay_info)
 
-        registerReceiver(stopReceiver, IntentFilter(ACTION_STOP), RECEIVER_NOT_EXPORTED)
+        ContextCompat.registerReceiver(this, stopReceiver, IntentFilter(ACTION_STOP),
+            ContextCompat.RECEIVER_NOT_EXPORTED)
 
         val port   = intent.getIntExtra(EXTRA_PORT, 7010)
         val width  = intent.getIntExtra(EXTRA_WIDTH, 1920)

@@ -27,7 +27,8 @@ class AirPlayCrypto(context: Context) {
 
     // Pair-Verify per-session state
     private var pvMyPriv:    X25519PrivateKeyParameters? = null
-    private var pvMyPub:     X25519PublicKeyParameters?  = null
+    var pvMyPub:             X25519PublicKeyParameters?  = null
+        private set
     private var pvShared:    ByteArray? = null
     private var pvClientPub: ByteArray? = null
 
