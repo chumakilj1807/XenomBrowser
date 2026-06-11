@@ -3,7 +3,6 @@ package com.xenombrowser.airplay
 import android.content.Context
 import org.bouncycastle.crypto.agreement.X25519Agreement
 import org.bouncycastle.crypto.agreement.srp.SRP6Server
-import org.bouncycastle.crypto.agreement.srp.SRP6Util
 import org.bouncycastle.crypto.agreement.srp.SRP6VerifierGenerator
 import org.bouncycastle.crypto.digests.SHA512Digest
 import org.bouncycastle.crypto.generators.Ed25519KeyPairGenerator
@@ -103,13 +102,11 @@ class AirPlayCrypto(context: Context) {
     /** Verify client M1; returns M2 on success, null on failure. */
     fun srpVerify(clientA: ByteArray, clientM1: ByteArray): ByteArray? {
         val srv = srpServer ?: return null
-        val B   = srpB       ?: return null
         return try {
-            val A = BigInteger(1, clientA)
-            val S = srv.calculateSecret(A)
-            val expM1 = SRP6Util.calculateM1(SHA512Digest(), N, G, A, B, S)
-            if (expM1 != BigInteger(1, clientM1)) return null
-            val M2 = SRP6Util.calculateM2(SHA512Digest(), N, A, expM1, S)
+            // calculateSecret stores S internally; verifyClientEvidenceMessage
+            // compares M1 (throws CryptoException if wrong) and returns M2
+            srv.calculateSecret(BigInteger(1, clientA))
+            val M2 = srv.verifyClientEvidenceMessage(BigInteger(1, clientM1))
             toFixedBytes(M2, 64)
         } catch (_: Exception) { null }
     }
