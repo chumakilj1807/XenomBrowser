@@ -28,6 +28,10 @@
         <ImageButton android:id="@+id/btn_bookmark_add" android:layout_width="40dp" android:layout_height="40dp"
             android:src="@drawable/ic_bookmark_off" android:background="@drawable/bg_nav_btn"
             android:focusable="false" android:contentDescription="Bookmark"/>
+        <TextView android:id="@+id/btn_tabs" android:layout_width="34dp" android:layout_height="34dp"
+            android:text="1" android:gravity="center" android:textColor="@color/text" android:textSize="14sp"
+            android:textStyle="bold" android:background="@drawable/bg_url_bar"
+            android:focusable="false" android:layout_marginStart="2dp" android:contentDescription="Tabs"/>
         <ImageButton android:id="@+id/btn_menu" android:layout_width="40dp" android:layout_height="40dp"
             android:src="@drawable/ic_menu" android:background="@drawable/bg_nav_btn"
             android:focusable="false" android:contentDescription="Menu" android:layout_marginStart="2dp"/>

@@ -36,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnForward: ImageButton
     private lateinit var btnReload: ImageButton
     private lateinit var btnBookmarkAdd: ImageButton
+    private lateinit var btnTabs: TextView
     private lateinit var btnMenu: ImageButton
     private lateinit var navBar: LinearLayout
     private lateinit var statusBar: LinearLayout
@@ -131,7 +132,9 @@ class MainActivity : AppCompatActivity() {
       try{Array.from(document.querySelectorAll('div,section,aside')).forEach(function(el){var s=getComputedStyle(el);if(s.position!=='fixed'&&s.position!=='sticky')return;var r=el.getBoundingClientRect();var big=r.width>=window.innerWidth*0.6&&r.height>=window.innerHeight*0.6;var z=parseInt(s.zIndex)||0;if(big&&z>=1000&&(s.backgroundColor.indexOf('rgba')>=0||el.className.toString().match(/modal|overlay|popup|backdrop|interstitial|paywall/i))){el.style.setProperty('display','none','important');n++;}});}catch(e){}
       try{if(getComputedStyle(document.body).overflow==='hidden'){document.body.style.setProperty('overflow','auto','important');document.documentElement.style.setProperty('overflow','auto','important');}}catch(e){}
       return n;
-    }
+    },
+    bigVideo:function(){var vs=document.querySelectorAll('video');var best=null,bc=0;for(var i=0;i<vs.length;i++){var v=vs[i];var r=v.getBoundingClientRect();if(r.width<2||r.height<2)continue;var c=(r.width*r.height)/(window.innerWidth*window.innerHeight);if(c>bc){bc=c;best=v;}}return (best&&bc>0.15)?best:null;},
+    playBig:function(){var v=this.bigVideo();if(!v)return'NONE';return this.playVideo(v);}
   };
   try{window.open=function(){return null;};}catch(e){}
   if(window._xbObs){window._xbObs.disconnect();}
@@ -149,6 +152,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         bindViews(); buildOverlays(); loadAdDomains(); setupWebView(); setupUrlBar()
         setupButtons(); setupCursor(); startSkipChecker()
+        tabs.add(webView); tabIndex = 0; updateTabButton()  // the XML WebView is tab 0
         // Restore last session if enabled, else open the configured home page
         val restore = Prefs.getBool(this, "restore", false)
         val last = Prefs.get(this, "last_session", "")
@@ -161,7 +165,7 @@ class MainActivity : AppCompatActivity() {
         tvStatus=findViewById(R.id.tv_status); ivModeIcon=findViewById(R.id.iv_mode_icon)
         btnBack=findViewById(R.id.btn_back); btnForward=findViewById(R.id.btn_forward)
         btnReload=findViewById(R.id.btn_reload); btnBookmarkAdd=findViewById(R.id.btn_bookmark_add)
-        btnMenu=findViewById(R.id.btn_menu); navBar=findViewById(R.id.nav_bar)
+        btnTabs=findViewById(R.id.btn_tabs); btnMenu=findViewById(R.id.btn_menu); navBar=findViewById(R.id.nav_bar)
         statusBar=findViewById(R.id.status_bar); progressBar=findViewById(R.id.progress_bar)
         webFrame=findViewById(R.id.web_frame); cursorView=findViewById(R.id.cursor_view)
         panelSide=findViewById(R.id.panel_side); rvBookmarks=findViewById(R.id.rv_bookmarks)
@@ -204,32 +208,32 @@ class MainActivity : AppCompatActivity() {
         setOnClickListener { onClick() }
     }
 
+    private fun setupWebView() = configureWebView(webView)
+
     @SuppressLint("SetJavaScriptEnabled")
-    private fun setupWebView() {
-        webView.settings.apply {
+    private fun configureWebView(wv: WebView) {
+        wv.settings.apply {
             javaScriptEnabled=true; domStorageEnabled=true; databaseEnabled=true
             loadWithOverviewMode=true; useWideViewPort=true
             setSupportZoom(true); builtInZoomControls=true; displayZoomControls=false
             mediaPlaybackRequiresUserGesture=false
             javaScriptCanOpenWindowsAutomatically=false
-            setSupportMultipleWindows(false)
+            setSupportMultipleWindows(true)
             cacheMode=WebSettings.LOAD_DEFAULT
             userAgentString=if (Prefs.desktopMode(this@MainActivity)) UA_DESKTOP else UA_MOBILE
         }
         CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
 
-        webView.addJavascriptInterface(object {
+        wv.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface fun onSearch(q: String) { handler.post { navigate(q) } }
             @android.webkit.JavascriptInterface fun onOpen(url: String) { handler.post { loadUrlOrHome(url) } }
             @android.webkit.JavascriptInterface fun onRetry() { handler.post { lastFailedUrl?.let { loadUrlOrHome(it) } } }
         }, "XenomBridge")
 
-        webView.setFindListener { active, total, _ ->
-            findCount.text = if (total == 0) "0/0" else "${active + 1}/$total"
-        }
+        wv.setFindListener { active, total, _ -> if (wv === webView) findCount.text = if (total == 0) "0/0" else "${active + 1}/$total" }
 
-        webView.webViewClient = object : WebViewClient() {
+        wv.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, req: WebResourceRequest): WebResourceResponse? {
                 if (!Prefs.adBlock(this@MainActivity)) return null
                 val host = req.url.host ?: return null
@@ -246,54 +250,58 @@ class MainActivity : AppCompatActivity() {
                 return false
             }
             override fun onPageStarted(view: WebView, url: String, fav: Bitmap?) {
-                currentUrl = url; etUrl.setText(shortUrl(url)); updateBookmarkBtn(url)
-                if (mode != Mode.SCROLL) exitToScroll()
-                progressBar.visibility = View.VISIBLE; progressBar.progress = 8
+                if (view === webView) {
+                    currentUrl = url; etUrl.setText(shortUrl(url)); updateBookmarkBtn(url)
+                    if (mode != Mode.SCROLL) exitToScroll()
+                    progressBar.visibility = View.VISIBLE; progressBar.progress = 8
+                }
                 view.evaluateJavascript("window._xbClean=${Prefs.getBool(this@MainActivity,"popups",true)};", null)
             }
             override fun onPageFinished(view: WebView, url: String) {
-                currentUrl = if (isHome(url)) "about:home" else url
-                injectJs(); updateNavBtns(); etUrl.setText(shortUrl(url))
-                progressBar.visibility = View.GONE
+                if (view === webView) {
+                    currentUrl = if (isHome(url)) "about:home" else url
+                    updateNavBtns(); etUrl.setText(shortUrl(url)); progressBar.visibility = View.GONE; lastFailedUrl = null
+                }
+                view.evaluateJavascript(INJECT_JS, null)
                 if (!isHome(url) && !url.startsWith("data:text/html")) HistoryManager.add(this@MainActivity, view.title ?: url, url)
-                if (Prefs.darkMode(this@MainActivity) && !isHome(url)) webView.loadUrl(DARK_CSS)
-                lastFailedUrl = null
+                if (Prefs.darkMode(this@MainActivity) && !isHome(url)) view.loadUrl(DARK_CSS)
             }
             override fun onReceivedError(view: WebView, req: WebResourceRequest, err: WebResourceError) {
-                if (req.isForMainFrame) {
-                    val failed = req.url.toString()
-                    lastFailedUrl = failed
-                    val desc = err.description?.toString() ?: "Ошибка соединения"
-                    view.loadDataWithBaseURL(null, errorPage(failed, desc), "text/html", "UTF-8", null)
+                if (req.isForMainFrame && view === webView) {
+                    lastFailedUrl = req.url.toString()
+                    view.loadDataWithBaseURL(null, errorPage(req.url.toString(), err.description?.toString() ?: "Ошибка соединения"), "text/html", "UTF-8", null)
                 }
             }
-            // Recover instead of crashing when the WebView renderer dies
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-                val dead = currentUrl
-                try { webFrame.removeView(webView) } catch (_: Exception) {}
-                try { webView.destroy() } catch (_: Exception) {}
-                rebuildWebView()
-                handler.postDelayed({ loadUrlOrHome(if (dead == "about:home") "about:home" else dead) }, 200)
-                Toast.makeText(this@MainActivity, "Страница перезагружена после сбоя", Toast.LENGTH_SHORT).show()
+                val idx = tabs.indexOf(view)
+                if (idx < 0) return true
+                val dead = if (view === webView) currentUrl else "about:home"
+                try { webFrame.removeView(view) } catch (_: Exception) {}
+                try { view.destroy() } catch (_: Exception) {}
+                val fresh = createWebView()
+                tabs[idx] = fresh
+                if (idx == tabIndex) { webView = fresh; fresh.visibility = View.VISIBLE; handler.postDelayed({ loadUrlOrHome(if (dead == "about:home") "about:home" else dead) }, 200) }
+                else fresh.visibility = View.GONE
+                Toast.makeText(this@MainActivity, "Вкладка перезагружена после сбоя", Toast.LENGTH_SHORT).show()
                 return true
             }
         }
-        webView.webChromeClient = object : WebChromeClient() {
+        wv.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView, progress: Int) {
+                if (view !== webView) return
                 progressBar.progress = progress
                 progressBar.visibility = if (progress >= 100) View.GONE else View.VISIBLE
                 if (progress > 30) injectJs()
             }
+            override fun onReceivedTitle(view: WebView, title: String?) { if (view === webView) updateTabButton() }
+            // A user-clicked _blank link opens a genuine new tab
             override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
                 if (isUserGesture) {
-                    val transport = resultMsg.obj as? WebView.WebViewTransport
-                    val tmp = WebView(this@MainActivity)
-                    tmp.webViewClient = object : WebViewClient() {
-                        override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
-                            webView.loadUrl(r.url.toString()); tmp.destroy(); return true
-                        }
-                    }
-                    transport?.webView = tmp; resultMsg.sendToTarget()
+                    val newWv = createWebView()
+                    tabs.add(newWv); newWv.visibility = View.GONE
+                    (resultMsg.obj as? WebView.WebViewTransport)?.webView = newWv
+                    resultMsg.sendToTarget()
+                    switchTab(tabs.size - 1)
                 } else handler.post { hint("⛔ Всплывающее окно заблокировано") }
                 return true
             }
@@ -314,7 +322,68 @@ class MainActivity : AppCompatActivity() {
             override fun onConsoleMessage(msg: ConsoleMessage?) = true
             override fun onPermissionRequest(request: PermissionRequest) { request.deny() }
         }
-        webView.setDownloadListener { url, _, contentDisp, mime, _ -> startDownload(url, contentDisp, mime) }
+        wv.setDownloadListener { url, _, contentDisp, mime, _ -> startDownload(url, contentDisp, mime) }
+    }
+
+    // ── Tabs ────────────────────────────────────────────────────────────────
+    private val tabs = mutableListOf<WebView>()
+    private var tabIndex = 0
+
+    private fun createWebView(): WebView {
+        val wv = WebView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            isFocusable = false; isFocusableInTouchMode = false
+        }
+        webFrame.addView(wv, 0)  // below cursor/suggest/find overlays
+        configureWebView(wv)
+        return wv
+    }
+
+    private fun newTab(url: String) {
+        val wv = createWebView()
+        tabs.add(wv)
+        switchTab(tabs.size - 1)
+        loadUrlOrHome(url)
+    }
+
+    private fun switchTab(i: Int) {
+        if (i < 0 || i >= tabs.size) return
+        webView.visibility = View.GONE
+        tabIndex = i
+        webView = tabs[i]
+        webView.visibility = View.VISIBLE
+        currentUrl = webView.url?.let { if (isHome(it)) "about:home" else it } ?: "about:home"
+        etUrl.setText(shortUrl(webView.url ?: "")); updateNavBtns(); updateBookmarkBtn(webView.url ?: ""); updateTabButton()
+        setMode(Mode.SCROLL)
+    }
+
+    private fun closeTab(i: Int) {
+        if (i < 0 || i >= tabs.size) return
+        if (tabs.size == 1) { loadUrlOrHome("about:home"); return }  // never close the last tab
+        val wv = tabs.removeAt(i)
+        try { webFrame.removeView(wv) } catch (_: Exception) {}
+        try { wv.destroy() } catch (_: Exception) {}
+        tabIndex = i.coerceAtMost(tabs.size - 1)
+        webView = tabs[tabIndex]
+        webView.visibility = View.VISIBLE
+        etUrl.setText(shortUrl(webView.url ?: "")); updateNavBtns(); updateTabButton(); setMode(Mode.SCROLL)
+    }
+
+    private fun updateTabButton() { btnTabs.text = tabs.size.toString() }
+
+    private fun showTabSwitcher() {
+        val labels = tabs.mapIndexed { i, wv ->
+            val t = (wv.title ?: wv.url ?: "Новая вкладка").let { if (it.contains("home.xenom")) "Стартовая" else it }
+            (if (i == tabIndex) "▶ " else "   ") + t.take(40)
+        }.toMutableList()
+        labels.add("➕ Новая вкладка")
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Вкладки (${tabs.size})")
+            .setItems(labels.toTypedArray()) { _, which ->
+                if (which == tabs.size) newTab("about:home") else switchTab(which)
+            }
+            .setNeutralButton("Закрыть текущую") { _, _ -> closeTab(tabIndex) }
+            .show()
     }
 
     private fun startDownload(url: String, contentDisp: String?, mime: String?) {
@@ -333,15 +402,6 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
         }
-    }
-
-    private fun rebuildWebView() {
-        webView = WebView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            isFocusable = false; isFocusableInTouchMode = false
-        }
-        webFrame.addView(webView, 0)  // keep cursor/suggest/find overlays on top
-        setupWebView()
     }
 
     private fun errorPage(url: String, desc: String): String {
@@ -488,6 +548,7 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
                 Mode.LINK, Mode.RESULTS, Mode.CURSOR -> { exitToScroll(); true }
                 Mode.SCROLL -> when {
                     webView.canGoBack() -> { webView.goBack(); true }
+                    tabs.size > 1 -> { closeTab(tabIndex); true }  // close tab instead of exiting
                     else -> { val now=System.currentTimeMillis(); if (now-lastBackTime<2000) { finish(); true } else { lastBackTime=now; Toast.makeText(this,"Нажмите ещё раз для выхода",Toast.LENGTH_SHORT).show(); true } }
                 }
             }
@@ -497,8 +558,14 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
 
     private fun handleOk() {
         when (mode) {
-            Mode.SCROLL -> webView.evaluateJavascript("window._xb?window._xb.skip(false):0") { r ->
-                if ((r?.trim()?.toIntOrNull() ?: 0) > 0) { webView.evaluateJavascript("window._xb.skip(true)", null); hint("Реклама пропущена ✓") } else enterElements()
+            Mode.SCROLL -> {
+                // 1) skip ad if present, 2) play a big video fullscreen, 3) else enter element nav
+                webView.evaluateJavascript("window._xb?window._xb.skip(false):0") { r ->
+                    if ((r?.trim()?.toIntOrNull() ?: 0) > 0) { webView.evaluateJavascript("window._xb.skip(true)", null); hint("Реклама пропущена ✓") }
+                    else webView.evaluateJavascript("window._xb?window._xb.playBig():'NONE'") { v ->
+                        if (v?.trim()?.removeSurrounding("\"") == "VIDEO_PLAY") hint("▶ Воспроизведение") else enterElements()
+                    }
+                }
             }
             Mode.LINK -> webView.evaluateJavascript("window._xb?window._xb.act():'NONE'") { r ->
                 val res = r?.trim()?.removeSurrounding("\"") ?: "NONE"
@@ -623,11 +690,13 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
             else { BookmarkManager.add(this, webView.title ?: url, url); Toast.makeText(this, "Закладка добавлена ★", Toast.LENGTH_SHORT).show() }
             updateBookmarkBtn(url)
         }
+        btnTabs.setOnClickListener { showTabSwitcher() }
         btnMenu.setOnClickListener { showMenu() }
     }
 
     private fun showMenu() {
         val items = arrayOf(
+            "➕ Новая вкладка", "🗂 Вкладки (${tabs.size})",
             "🏠 Стартовая страница", "🎤 Голосовой поиск", "📖 Режим чтения",
             "★ Закладки", "🕘 История", "⬇ Загрузки", "🔍 Поиск по странице",
             if (Prefs.desktopMode(this)) "📱 Мобильная версия" else "🖥 Десктоп-версия",
@@ -637,18 +706,20 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
         )
         androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Меню").setItems(items) { _, which ->
             when (which) {
-                0 -> loadUrlOrHome("about:home")
-                1 -> startVoiceSearch()
-                2 -> { webView.loadUrl(READER_JS); hint("📖 Режим чтения") }
-                3 -> pageResult.launch(Intent(this, ListPageActivity::class.java).putExtra(ListPageActivity.EXTRA_MODE, ListPageActivity.MODE_BOOKMARKS))
-                4 -> pageResult.launch(Intent(this, ListPageActivity::class.java).putExtra(ListPageActivity.EXTRA_MODE, ListPageActivity.MODE_HISTORY))
-                5 -> pageResult.launch(Intent(this, ListPageActivity::class.java).putExtra(ListPageActivity.EXTRA_MODE, ListPageActivity.MODE_DOWNLOADS))
-                6 -> showFindBar()
-                7 -> { Prefs.setBool(this, "desktop", !Prefs.desktopMode(this)); webView.settings.userAgentString = if (Prefs.desktopMode(this)) UA_DESKTOP else UA_MOBILE; webView.reload() }
-                8 -> { Prefs.setBool(this, "dark", !Prefs.darkMode(this)); webView.reload() }
-                9 -> { Prefs.setBool(this, "adblock", !Prefs.adBlock(this)); webView.reload() }
-                10 -> { webView.evaluateJavascript("window._xbClean=true;window._xb&&window._xb.clean();", null); Toast.makeText(this, "Очищено ✓", Toast.LENGTH_SHORT).show() }
-                11 -> startActivity(Intent(this, SettingsActivity::class.java))
+                0 -> newTab("about:home")
+                1 -> showTabSwitcher()
+                2 -> loadUrlOrHome("about:home")
+                3 -> startVoiceSearch()
+                4 -> { webView.loadUrl(READER_JS); hint("📖 Режим чтения") }
+                5 -> pageResult.launch(Intent(this, ListPageActivity::class.java).putExtra(ListPageActivity.EXTRA_MODE, ListPageActivity.MODE_BOOKMARKS))
+                6 -> pageResult.launch(Intent(this, ListPageActivity::class.java).putExtra(ListPageActivity.EXTRA_MODE, ListPageActivity.MODE_HISTORY))
+                7 -> pageResult.launch(Intent(this, ListPageActivity::class.java).putExtra(ListPageActivity.EXTRA_MODE, ListPageActivity.MODE_DOWNLOADS))
+                8 -> showFindBar()
+                9 -> { Prefs.setBool(this, "desktop", !Prefs.desktopMode(this)); webView.settings.userAgentString = if (Prefs.desktopMode(this)) UA_DESKTOP else UA_MOBILE; webView.reload() }
+                10 -> { Prefs.setBool(this, "dark", !Prefs.darkMode(this)); webView.reload() }
+                11 -> { Prefs.setBool(this, "adblock", !Prefs.adBlock(this)); webView.reload() }
+                12 -> { webView.evaluateJavascript("window._xbClean=true;window._xb&&window._xb.clean();", null); Toast.makeText(this, "Очищено ✓", Toast.LENGTH_SHORT).show() }
+                13 -> startActivity(Intent(this, SettingsActivity::class.java))
             }
         }.show()
     }
@@ -686,5 +757,5 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
         val wantUa = if (Prefs.desktopMode(this)) UA_DESKTOP else UA_MOBILE
         if (webView.settings.userAgentString != wantUa) { webView.settings.userAgentString = wantUa; webView.reload() }
     }
-    override fun onDestroy() { super.onDestroy(); skipChecker?.let { handler.removeCallbacks(it) }; webView.destroy() }
+    override fun onDestroy() { super.onDestroy(); skipChecker?.let { handler.removeCallbacks(it) }; tabs.forEach { try { it.destroy() } catch (_: Exception) {} } }
 }
