@@ -48,6 +48,7 @@ class SettingsActivity : AppCompatActivity() {
         root.addView(toggle("Десктоп-версия сайтов", "desktop", true))
         root.addView(toggle("Тёмный режим страниц", "dark", false))
         root.addView(toggle("Блокировать всплывающие окна", "popups", true))
+        root.addView(toggle("Восстанавливать сессию при запуске", "restore", false))
 
         // Home page
         root.addView(section("Стартовая страница"))

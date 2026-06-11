@@ -66,6 +66,7 @@ class MainActivity : AppCompatActivity() {
     private var customViewCb: WebChromeClient.CustomViewCallback? = null
     private var suggestJob: Job? = null
     private var currentUrl = "about:home"
+    private var lastFailedUrl: String? = null
 
     private val UA_DESKTOP = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     private val UA_MOBILE  = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
@@ -78,6 +79,22 @@ class MainActivity : AppCompatActivity() {
     private val pageResult = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         res.data?.getStringExtra(ListPageActivity.EXTRA_URL)?.let { loadUrlOrHome(it) }
     }
+    private val voiceResult = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        val text = res.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (!text.isNullOrBlank()) navigate(text)
+    }
+
+    private fun startVoiceSearch() {
+        try {
+            val i = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Говорите...")
+            }
+            voiceResult.launch(i)
+        } catch (_: Exception) { Toast.makeText(this, "Голосовой ввод недоступен", Toast.LENGTH_SHORT).show() }
+    }
+
+    private val READER_JS = "javascript:(function(){try{var best=null,bs=0;document.querySelectorAll('article,main,[role=main],.article,.post,.content,#content').forEach(function(e){var t=(e.innerText||'').length;if(t>bs){bs=t;best=e;}});if(!best||bs<400){var ps=document.querySelectorAll('p');var p=null,pl=0;ps.forEach(function(e){if((e.innerText||'').length>pl){pl=(e.innerText||'').length;p=e;}});best=p?p.parentElement:document.body;}var title=document.title;var h=best.innerHTML;document.documentElement.innerHTML='<head><meta name=viewport content=\"width=device-width,initial-scale=1\"></head><body style=\"max-width:760px;margin:0 auto;padding:32px 24px;background:#15171a;color:#e6e6e6;font:19px/1.7 Georgia,serif\"><h1 style=\"font-family:-apple-system,Arial;color:#fff\">'+title+'</h1><div>'+h+'</div></body>';document.querySelectorAll('img').forEach(function(i){i.style.maxWidth='100%';i.style.height='auto';});}catch(e){}})()"
 
     private val INJECT_JS = """
 (function(){
@@ -132,7 +149,11 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         bindViews(); buildOverlays(); loadAdDomains(); setupWebView(); setupUrlBar()
         setupButtons(); setupCursor(); startSkipChecker()
-        loadUrlOrHome(Prefs.homeUrl(this)); setMode(Mode.SCROLL)
+        // Restore last session if enabled, else open the configured home page
+        val restore = Prefs.getBool(this, "restore", false)
+        val last = Prefs.get(this, "last_session", "")
+        loadUrlOrHome(if (restore && last.isNotBlank()) last else Prefs.homeUrl(this))
+        setMode(Mode.SCROLL)
     }
 
     private fun bindViews() {
@@ -201,6 +222,7 @@ class MainActivity : AppCompatActivity() {
         webView.addJavascriptInterface(object {
             @android.webkit.JavascriptInterface fun onSearch(q: String) { handler.post { navigate(q) } }
             @android.webkit.JavascriptInterface fun onOpen(url: String) { handler.post { loadUrlOrHome(url) } }
+            @android.webkit.JavascriptInterface fun onRetry() { handler.post { lastFailedUrl?.let { loadUrlOrHome(it) } } }
         }, "XenomBridge")
 
         webView.setFindListener { active, total, _ ->
@@ -233,8 +255,27 @@ class MainActivity : AppCompatActivity() {
                 currentUrl = if (isHome(url)) "about:home" else url
                 injectJs(); updateNavBtns(); etUrl.setText(shortUrl(url))
                 progressBar.visibility = View.GONE
-                if (!isHome(url)) HistoryManager.add(this@MainActivity, view.title ?: url, url)
+                if (!isHome(url) && !url.startsWith("data:text/html")) HistoryManager.add(this@MainActivity, view.title ?: url, url)
                 if (Prefs.darkMode(this@MainActivity) && !isHome(url)) webView.loadUrl(DARK_CSS)
+                lastFailedUrl = null
+            }
+            override fun onReceivedError(view: WebView, req: WebResourceRequest, err: WebResourceError) {
+                if (req.isForMainFrame) {
+                    val failed = req.url.toString()
+                    lastFailedUrl = failed
+                    val desc = err.description?.toString() ?: "Ошибка соединения"
+                    view.loadDataWithBaseURL(null, errorPage(failed, desc), "text/html", "UTF-8", null)
+                }
+            }
+            // Recover instead of crashing when the WebView renderer dies
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                val dead = currentUrl
+                try { webFrame.removeView(webView) } catch (_: Exception) {}
+                try { webView.destroy() } catch (_: Exception) {}
+                rebuildWebView()
+                handler.postDelayed({ loadUrlOrHome(if (dead == "about:home") "about:home" else dead) }, 200)
+                Toast.makeText(this@MainActivity, "Страница перезагружена после сбоя", Toast.LENGTH_SHORT).show()
+                return true
             }
         }
         webView.webChromeClient = object : WebChromeClient() {
@@ -293,6 +334,28 @@ class MainActivity : AppCompatActivity() {
             try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
         }
     }
+
+    private fun rebuildWebView() {
+        webView = WebView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            isFocusable = false; isFocusableInTouchMode = false
+        }
+        webFrame.addView(webView, 0)  // keep cursor/suggest/find overlays on top
+        setupWebView()
+    }
+
+    private fun errorPage(url: String, desc: String): String {
+        val host = try { Uri.parse(url).host ?: url } catch (_: Exception) { url }
+        return """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{background:#0D1117;color:#C9D1D9;font-family:-apple-system,Roboto,Arial,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:24px}
+.ic{font-size:64px;margin-bottom:16px}.t{font-size:24px;font-weight:700;color:#fff;margin-bottom:8px}
+.d{color:#8B949E;margin-bottom:6px}.h{color:#00B4FF;margin-bottom:28px;font-size:14px}
+button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;padding:14px 36px;cursor:pointer}</style></head>
+<body><div class="ic">📡</div><div class="t">Не удалось открыть страницу</div>
+<div class="d">${esc(desc)}</div><div class="h">${esc(host)}</div>
+<button onclick="XenomBridge.onRetry()">Повторить</button></body></html>"""
+    }
+    private fun esc(s: String) = s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
 
     private fun injectJs() = webView.evaluateJavascript(INJECT_JS, null)
     private fun isHome(u: String) = u.startsWith("about") || u.startsWith("data:") || u.contains("home.xenom")
@@ -380,6 +443,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
+        if ((code == KeyEvent.KEYCODE_SEARCH || code == KeyEvent.KEYCODE_VOICE_ASSIST) && event.action == KeyEvent.ACTION_UP) {
+            startVoiceSearch(); return true
+        }
         if (findBar.visibility == View.VISIBLE) {
             if (code == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) { hideFindBar(); return true }
         }
@@ -562,8 +628,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun showMenu() {
         val items = arrayOf(
-            "🏠 Стартовая страница", "★ Закладки", "🕘 История", "⬇ Загрузки",
-            "🔍 Поиск по странице",
+            "🏠 Стартовая страница", "🎤 Голосовой поиск", "📖 Режим чтения",
+            "★ Закладки", "🕘 История", "⬇ Загрузки", "🔍 Поиск по странице",
             if (Prefs.desktopMode(this)) "📱 Мобильная версия" else "🖥 Десктоп-версия",
             if (Prefs.darkMode(this)) "☀ Светлые страницы" else "🌙 Тёмные страницы",
             if (Prefs.adBlock(this)) "🛡 Реклама: ВКЛ" else "🛡 Реклама: ВЫКЛ",
@@ -572,15 +638,17 @@ class MainActivity : AppCompatActivity() {
         androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Меню").setItems(items) { _, which ->
             when (which) {
                 0 -> loadUrlOrHome("about:home")
-                1 -> pageResult.launch(Intent(this, ListPageActivity::class.java).putExtra(ListPageActivity.EXTRA_MODE, ListPageActivity.MODE_BOOKMARKS))
-                2 -> pageResult.launch(Intent(this, ListPageActivity::class.java).putExtra(ListPageActivity.EXTRA_MODE, ListPageActivity.MODE_HISTORY))
-                3 -> pageResult.launch(Intent(this, ListPageActivity::class.java).putExtra(ListPageActivity.EXTRA_MODE, ListPageActivity.MODE_DOWNLOADS))
-                4 -> showFindBar()
-                5 -> { Prefs.setBool(this, "desktop", !Prefs.desktopMode(this)); webView.settings.userAgentString = if (Prefs.desktopMode(this)) UA_DESKTOP else UA_MOBILE; webView.reload() }
-                6 -> { Prefs.setBool(this, "dark", !Prefs.darkMode(this)); webView.reload() }
-                7 -> { Prefs.setBool(this, "adblock", !Prefs.adBlock(this)); webView.reload() }
-                8 -> { webView.evaluateJavascript("window._xbClean=true;window._xb&&window._xb.clean();", null); Toast.makeText(this, "Очищено ✓", Toast.LENGTH_SHORT).show() }
-                9 -> startActivity(Intent(this, SettingsActivity::class.java))
+                1 -> startVoiceSearch()
+                2 -> { webView.loadUrl(READER_JS); hint("📖 Режим чтения") }
+                3 -> pageResult.launch(Intent(this, ListPageActivity::class.java).putExtra(ListPageActivity.EXTRA_MODE, ListPageActivity.MODE_BOOKMARKS))
+                4 -> pageResult.launch(Intent(this, ListPageActivity::class.java).putExtra(ListPageActivity.EXTRA_MODE, ListPageActivity.MODE_HISTORY))
+                5 -> pageResult.launch(Intent(this, ListPageActivity::class.java).putExtra(ListPageActivity.EXTRA_MODE, ListPageActivity.MODE_DOWNLOADS))
+                6 -> showFindBar()
+                7 -> { Prefs.setBool(this, "desktop", !Prefs.desktopMode(this)); webView.settings.userAgentString = if (Prefs.desktopMode(this)) UA_DESKTOP else UA_MOBILE; webView.reload() }
+                8 -> { Prefs.setBool(this, "dark", !Prefs.darkMode(this)); webView.reload() }
+                9 -> { Prefs.setBool(this, "adblock", !Prefs.adBlock(this)); webView.reload() }
+                10 -> { webView.evaluateJavascript("window._xbClean=true;window._xb&&window._xb.clean();", null); Toast.makeText(this, "Очищено ✓", Toast.LENGTH_SHORT).show() }
+                11 -> startActivity(Intent(this, SettingsActivity::class.java))
             }
         }.show()
     }
@@ -611,7 +679,12 @@ class MainActivity : AppCompatActivity() {
     private fun openInPlayer(url: String, isAudio: Boolean) { startActivity(Intent(this, VideoActivity::class.java).apply { putExtra(VideoActivity.EXTRA_URL, url); putExtra(VideoActivity.EXTRA_AUDIO_ONLY, isAudio) }) }
     private fun loadAdDomains() { try { assets.open("adblock.txt").bufferedReader().forEachLine { t -> if (t.isNotEmpty() && !t.startsWith("#")) adDomains.add(t.trim()) } } catch (_: Exception) {} }
 
-    override fun onPause()   { super.onPause();   webView.onPause() }
-    override fun onResume()  { super.onResume();  webView.onResume() }
+    override fun onPause()   { super.onPause(); webView.onPause(); if (!isHome(currentUrl)) Prefs.set(this, "last_session", currentUrl) }
+    override fun onResume()  {
+        super.onResume(); webView.onResume()
+        // Pick up changes made in Settings (search engine is read live; sync UA here)
+        val wantUa = if (Prefs.desktopMode(this)) UA_DESKTOP else UA_MOBILE
+        if (webView.settings.userAgentString != wantUa) { webView.settings.userAgentString = wantUa; webView.reload() }
+    }
     override fun onDestroy() { super.onDestroy(); skipChecker?.let { handler.removeCallbacks(it) }; webView.destroy() }
 }

@@ -35,8 +35,22 @@
         <activity
             android:name=".VideoActivity"
             android:exported="false"
-            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"
+            android:supportsPictureInPicture="true"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
+            android:resizeableActivity="true"
             android:theme="@style/Theme.XenomBrowser.Fullscreen"/>
+
+        <activity
+            android:name=".ListPageActivity"
+            android:exported="false"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"
+            android:theme="@style/Theme.XenomBrowser"/>
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"
+            android:theme="@style/Theme.XenomBrowser"/>
 
     </application>
 </manifest>
