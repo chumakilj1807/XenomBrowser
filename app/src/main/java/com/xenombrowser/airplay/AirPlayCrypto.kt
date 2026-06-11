@@ -103,10 +103,11 @@ class AirPlayCrypto(context: Context) {
     fun srpVerify(clientA: ByteArray, clientM1: ByteArray): ByteArray? {
         val srv = srpServer ?: return null
         return try {
-            // calculateSecret stores S internally; verifyClientEvidenceMessage
-            // compares M1 (throws CryptoException if wrong) and returns M2
+            // calculateSecret stores S internally
             srv.calculateSecret(BigInteger(1, clientA))
-            val M2 = srv.verifyClientEvidenceMessage(BigInteger(1, clientM1))
+            // verifyClientEvidenceMessage returns Boolean in BC 1.77
+            if (!srv.verifyClientEvidenceMessage(BigInteger(1, clientM1))) return null
+            val M2 = srv.calculateServerEvidenceMessage()
             toFixedBytes(M2, 64)
         } catch (_: Exception) { null }
     }

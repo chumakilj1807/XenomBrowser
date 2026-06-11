@@ -90,10 +90,10 @@ class AirPlayService : Service() {
         }
 
         registrationListener = object : NsdManager.RegistrationListener {
-            override fun onServiceRegistered(si: NsdServiceInfo) = Log.i(TAG, "mDNS registered: ${si.serviceName}")
-            override fun onRegistrationFailed(si: NsdServiceInfo, code: Int) = Log.e(TAG, "mDNS registration failed: $code")
-            override fun onServiceUnregistered(si: NsdServiceInfo) = Unit
-            override fun onUnregistrationFailed(si: NsdServiceInfo, code: Int) = Unit
+            override fun onServiceRegistered(si: NsdServiceInfo)              { Log.i(TAG, "mDNS registered: ${si.serviceName}") }
+            override fun onRegistrationFailed(si: NsdServiceInfo, code: Int)  { Log.e(TAG, "mDNS registration failed: $code") }
+            override fun onServiceUnregistered(si: NsdServiceInfo)            {}
+            override fun onUnregistrationFailed(si: NsdServiceInfo, code: Int){}
         }
 
         nsdManager = getSystemService(NSD_SERVICE) as NsdManager
