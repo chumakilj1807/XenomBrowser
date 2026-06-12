@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private val adDomains = mutableSetOf<String>()
     private var okDownTime = -1L
     private val LONG_PRESS_MS = 700L
+    private val HOLD_REPEAT = 4   // key auto-repeats before a "hold" gesture triggers
     private var lastBackTime = 0L
     private var cursorX = 0f
     private var cursorY = 0f
@@ -63,11 +64,10 @@ class MainActivity : AppCompatActivity() {
     private var webTyping = false
     private var toolbarFocus = false
     private var toolbarIdx = 3
-    private val focusRing by lazy {
-        android.graphics.drawable.GradientDrawable().apply {
-            setColor(Color.TRANSPARENT); cornerRadius = dp(8).toFloat()
-            setStroke(dp(3), Color.parseColor("#00E5FF"))
-        }
+    private val toolbarOrigBg = HashMap<View, android.graphics.drawable.Drawable?>()
+    private fun makeRing() = android.graphics.drawable.GradientDrawable().apply {
+        setColor(Color.parseColor("#3300E5FF")); cornerRadius = dp(8).toFloat()
+        setStroke(dp(4), Color.parseColor("#00E5FF"))
     }
     private var customView: View? = null
     private var customViewCb: WebChromeClient.CustomViewCallback? = null
@@ -525,10 +525,15 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
         if (toolbarFocus && !etUrl.isFocused) {
             if (event.action != KeyEvent.ACTION_DOWN) return true
             when (code) {
-                KeyEvent.KEYCODE_DPAD_LEFT  -> { moveToolbar(-1); return true }
-                KeyEvent.KEYCODE_DPAD_RIGHT -> { moveToolbar(1); return true }
-                KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_BACK -> { exitToolbar(); return true }
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { activateToolbar(); return true }
+                KeyEvent.KEYCODE_DPAD_LEFT  -> { if (event.repeatCount == 0) moveToolbar(-1); return true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { if (event.repeatCount == 0) moveToolbar(1); return true }
+                KeyEvent.KEYCODE_DPAD_DOWN  -> {  // HOLD ↓ to exit the panel
+                    if (event.repeatCount >= HOLD_REPEAT) exitToolbar()
+                    else if (event.repeatCount == 0) hint("Удерживайте ↓ чтобы выйти на страницу")
+                    return true
+                }
+                KeyEvent.KEYCODE_BACK -> { exitToolbar(); return true }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { if (event.repeatCount == 0) activateToolbar(); return true }
                 KeyEvent.KEYCODE_DPAD_UP -> return true
             }
             return true
@@ -574,7 +579,13 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
             return super.dispatchKeyEvent(event)
         }
         return when (code) {
-            KeyEvent.KEYCODE_DPAD_UP    -> when (mode) { Mode.SCROLL->{ if (webView.scrollY<=0) enterToolbar() else webView.scrollBy(0,-280); true }; Mode.LINK->linkNav("up"); Mode.RESULTS->{ moveResults(-1); true }; Mode.CURSOR->{ moveCursor(0,-CURSOR_STEP); true } }
+            KeyEvent.KEYCODE_DPAD_UP    -> when (mode) {
+                Mode.SCROLL -> {
+                    if (webView.scrollY > 0) webView.scrollBy(0, -280)          // scroll up normally
+                    else if (event.repeatCount >= HOLD_REPEAT) enterToolbar()   // HOLD ↑ at top → panel
+                    true
+                }
+                Mode.LINK->linkNav("up"); Mode.RESULTS->{ moveResults(-1); true }; Mode.CURSOR->{ moveCursor(0,-CURSOR_STEP); true } }
             KeyEvent.KEYCODE_DPAD_DOWN  -> when (mode) { Mode.SCROLL->{ webView.scrollBy(0,280); true }; Mode.LINK->linkNav("down"); Mode.RESULTS->{ moveResults(1); true }; Mode.CURSOR->{ moveCursor(0,CURSOR_STEP); true } }
             KeyEvent.KEYCODE_DPAD_LEFT  -> when (mode) { Mode.SCROLL->{ enterElements(); true }; Mode.LINK->linkNav("left"); Mode.RESULTS->{ exitToScroll(); true }; Mode.CURSOR->{ moveCursor(-CURSOR_STEP,0); true } }
             KeyEvent.KEYCODE_DPAD_RIGHT -> when (mode) { Mode.SCROLL->{ enterResults(); true }; Mode.LINK->linkNav("right"); Mode.RESULTS->{ webView.scrollBy(250,0); true }; Mode.CURSOR->{ moveCursor(CURSOR_STEP,0); true } }
@@ -636,6 +647,7 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
     }
 
     private fun focusUrlBar() {
+        etUrl.isFocusable = true; etUrl.isFocusableInTouchMode = true
         etUrl.requestFocus(); etUrl.setText(if (currentUrl=="about:home") "" else currentUrl); etUrl.selectAll()
         etUrl.post { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(etUrl, InputMethodManager.SHOW_FORCED) }
         hint("Введите адрес или поисковый запрос • НАЗАД — отмена")
@@ -650,19 +662,31 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
     }
     private fun moveToolbar(d: Int) { toolbarIdx = (toolbarIdx + d).coerceIn(0, toolbarItems.size - 1); highlightToolbar() }
     private fun highlightToolbar() {
-        toolbarItems.forEachIndexed { i, v -> v.foreground = if (i == toolbarIdx) focusRing else null; v.scaleX = if (i == toolbarIdx) 1.12f else 1f; v.scaleY = v.scaleX }
-        val names = listOf("Назад","Вперёд","Обновить","Адрес","Закладка","Вкладки","Меню")
-        hint("▸ ${names[toolbarIdx]} • ←→ выбор • ОК — нажать • ↓ — к странице")
+        toolbarItems.forEachIndexed { i, v ->
+            if (!toolbarOrigBg.containsKey(v)) toolbarOrigBg[v] = v.background
+            if (i == toolbarIdx) {
+                v.setBackgroundColor(Color.parseColor("#1F6FEB")); v.foreground = makeRing()
+                v.scaleX = 1.12f; v.scaleY = 1.12f
+            } else {
+                v.background = toolbarOrigBg[v]; v.foreground = null
+                v.scaleX = 1f; v.scaleY = 1f
+            }
+        }
+        val names = listOf("◀ Назад","Вперёд ▶","⟳ Обновить","🔗 Адрес","★ Закладка","🗂 Вкладки","☰ Меню")
+        hint("ПАНЕЛЬ ▸ ${names[toolbarIdx]} • ←→ выбор • ОК — нажать • удержать ↓ — выход на страницу")
     }
-    private fun clearToolbar() { toolbarItems.forEach { it.foreground = null; it.scaleX = 1f; it.scaleY = 1f } }
+    private fun clearToolbar() {
+        toolbarItems.forEach { v -> v.foreground = null; v.scaleX = 1f; v.scaleY = 1f; if (toolbarOrigBg.containsKey(v)) v.background = toolbarOrigBg[v] }
+    }
     private fun exitToolbar() { toolbarFocus = false; clearToolbar(); setMode(Mode.SCROLL) }
     private fun activateToolbar() {
         val v = toolbarItems[toolbarIdx]
-        if (v === etUrl) { toolbarFocus = false; clearToolbar(); focusUrlBar() }
-        else { v.performClick(); if (toolbarIdx == 0 || toolbarIdx == 1) exitToolbar() }  // back/forward → return to page
+        if (v === etUrl) { toolbarFocus = false; clearToolbar(); focusUrlBar() }   // edit address
+        else v.performClick()   // back/forward/reload/bookmark/tabs/menu — panel stays open
     }
 
     private fun setupUrlBar() {
+        etUrl.isFocusable = false; etUrl.isFocusableInTouchMode = false  // only focusable while editing
         etUrl.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) etUrl.post { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(etUrl, InputMethodManager.SHOW_FORCED) } else suggestList.visibility = View.GONE }
         etUrl.setOnEditorActionListener { _, actionId, _ ->
             if (actionId in listOf(EditorInfo.IME_ACTION_GO, EditorInfo.IME_ACTION_SEARCH, EditorInfo.IME_ACTION_DONE)) {
@@ -718,6 +742,8 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
     private fun dismissKeyboard() {
         (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(window.decorView.windowToken, 0)
         webView.isFocusable = false; webView.isFocusableInTouchMode = false
+        // Release the URL bar so it never traps D-pad focus when not editing
+        etUrl.clearFocus(); etUrl.isFocusable = false; etUrl.isFocusableInTouchMode = false
     }
     // Type DIRECTLY into the focused web page field (the field was focused by act()/clickAt).
     // The on-screen keyboard routes input to the page input — no proxy through the URL bar.
