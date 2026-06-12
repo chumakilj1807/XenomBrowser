@@ -61,6 +61,14 @@ class MainActivity : AppCompatActivity() {
     private var cursorY = 0f
     private val CURSOR_STEP = 14
     private var webTyping = false
+    private var toolbarFocus = false
+    private var toolbarIdx = 3
+    private val focusRing by lazy {
+        android.graphics.drawable.GradientDrawable().apply {
+            setColor(Color.TRANSPARENT); cornerRadius = dp(8).toFloat()
+            setStroke(dp(3), Color.parseColor("#00E5FF"))
+        }
+    }
     private var customView: View? = null
     private var customViewCb: WebChromeClient.CustomViewCallback? = null
     private var suggestJob: Job? = null
@@ -102,8 +110,8 @@ class MainActivity : AppCompatActivity() {
     cur:null,
     vis:function(el){var s=getComputedStyle(el);if(s.display==='none'||s.visibility==='hidden'||parseFloat(s.opacity)<0.05)return false;var r=el.getBoundingClientRect();return r.width>1&&r.height>1&&r.right>0&&r.left<window.innerWidth&&r.bottom>0&&r.top<window.innerHeight;},
     all:function(){var sels=['a[href]:not([href^="javascript:void"])','button:not([disabled])','[role="button"]','[role="link"]','input:not([type="hidden"]):not([disabled])','textarea:not([disabled])','select:not([disabled])','video','audio','[onclick]','[tabindex]:not([tabindex="-1"])'].join(',');var seen=new WeakSet();return Array.from(document.querySelectorAll(sels)).filter(function(el){if(seen.has(el))return false;seen.add(el);return window._xb.vis(el);});},
-    hl:function(el){this.clr();if(!el)return'';el._o=el.style.outline||'';el._oo=el.style.outlineOffset||'';el.style.outline='3px solid #00B4FF';el.style.outlineOffset='2px';el.setAttribute('data-xb','1');el.scrollIntoView({block:'center',behavior:'smooth',inline:'nearest'});var t=el.tagName.toLowerCase();if(t==='input'||t==='textarea')return el.placeholder||el.name||'Поле ввода';if(t==='video')return'▶ Видео — ОК для просмотра';if(t==='audio')return'♪ Аудио';return(el.title||el.textContent||el.alt||el.value||el.getAttribute('href')||'').trim().replace(/\s+/g,' ').substring(0,80);},
-    clr:function(){var el=document.querySelector('[data-xb]');if(el){el.style.outline=el._o||'';el.style.outlineOffset=el._oo||'';el.removeAttribute('data-xb');}},
+    hl:function(el){this.clr();if(!el)return'';el._o=el.style.outline||'';el._oo=el.style.outlineOffset||'';el._bs=el.style.boxShadow||'';el._br=el.style.borderRadius||'';el.style.setProperty('outline','4px solid #00E5FF','important');el.style.setProperty('outline-offset','2px','important');el.style.setProperty('box-shadow','0 0 0 4px rgba(0,229,255,.30), 0 0 18px 5px rgba(0,229,255,.55)','important');el.style.setProperty('border-radius','6px','important');el.setAttribute('data-xb','1');el.scrollIntoView({block:'center',behavior:'smooth',inline:'nearest'});var t=el.tagName.toLowerCase();if(t==='input'||t==='textarea')return el.placeholder||el.name||'Поле ввода';if(t==='video')return'▶ Видео — ОК для просмотра';if(t==='audio')return'♪ Аудио';return(el.title||el.textContent||el.alt||el.value||el.getAttribute('href')||'').trim().replace(/\s+/g,' ').substring(0,80);},
+    clr:function(){var el=document.querySelector('[data-xb]');if(el){el.style.outline=el._o||'';el.style.outlineOffset=el._oo||'';el.style.boxShadow=el._bs||'';el.style.borderRadius=el._br||'';el.removeAttribute('data-xb');}},
     nav:function(dir){var els=this.all();if(!els.length)return'EMPTY';if(!this.cur||!document.body.contains(this.cur)||!this.vis(this.cur)){this.cur=els.reduce(function(a,b){var ra=a.getBoundingClientRect(),rb=b.getBoundingClientRect();return(ra.top*3+ra.left)<(rb.top*3+rb.left)?a:b;});return this.hl(this.cur);}var cr=this.cur.getBoundingClientRect(),cx=cr.left+cr.width/2,cy=cr.top+cr.height/2;var cands=els.filter(function(el){if(el===window._xb.cur)return false;var r=el.getBoundingClientRect(),ex=r.left+r.width/2,ey=r.top+r.height/2;if(dir==='right')return ex>cx+8;if(dir==='left')return ex<cx-8;if(dir==='down')return ey>cy+8;if(dir==='up')return ey<cy-8;return false;});if(!cands.length)return'SCROLL_'+dir;var best=cands.reduce(function(a,b){var ra=a.getBoundingClientRect(),rb=b.getBoundingClientRect(),ax=ra.left+ra.width/2,ay=ra.top+ra.height/2,bx=rb.left+rb.width/2,by=rb.top+rb.height/2,sa,sb;if(dir==='right'||dir==='left'){sa=Math.abs(ax-cx)+Math.abs(ay-cy)*2.5;sb=Math.abs(bx-cx)+Math.abs(by-cy)*2.5;}else{sa=Math.abs(ay-cy)+Math.abs(ax-cx)*2.5;sb=Math.abs(by-cy)+Math.abs(bx-cx)*2.5;}return sa<sb?a:b;});this.cur=best;return this.hl(best);},
     playVideo:function(v){try{v.muted=false;v.removeAttribute('muted');}catch(e){}try{v.play();}catch(e){}try{var rf=v.requestFullscreen||v.webkitRequestFullscreen||v.webkitEnterFullscreen||v.mozRequestFullScreen;if(rf)rf.call(v);}catch(e){}return'VIDEO_PLAY';},
     act:function(){if(!this.cur)return'NONE';var el=this.cur;this.clr();this.cur=null;var tag=el.tagName.toLowerCase();if(tag==='input'||tag==='textarea'||tag==='select'){el.focus();var r2=el.getBoundingClientRect();var ph2=el.placeholder||el.getAttribute('aria-label')||el.name||'Поле ввода';return'INPUT:'+Math.round(r2.left+r2.width/2)+':'+Math.round(r2.top+r2.height/2)+':'+ph2.substring(0,40);}var inp=el.querySelector('input:not([type="hidden"]),textarea');if(inp&&window._xb.vis(inp)){inp.focus();var ri=inp.getBoundingClientRect();var phi=inp.placeholder||inp.getAttribute('aria-label')||inp.name||'Поле ввода';return'INPUT:'+Math.round(ri.left+ri.width/2)+':'+Math.round(ri.top+ri.height/2)+':'+phi.substring(0,40);}if(tag==='video'){var src=el.currentSrc||el.src||'';if(src&&/\.(mp4|m3u8|webm|mkv|mpd)/i.test(src)&&!src.startsWith('blob:'))return'VIDEO:'+src;return this.playVideo(el);}if(tag==='audio'){var src2=el.currentSrc||el.src||'';if(src2&&!src2.startsWith('blob:'))return'AUDIO:'+src2;if(el.paused)el.play();else el.pause();return'AUDIO_TOGGLE';}var r=el.getBoundingClientRect(),mx=r.left+r.width/2,my=r.top+r.height/2;['mousedown','mouseup','click'].forEach(function(evt){el.dispatchEvent(new MouseEvent(evt,{bubbles:true,cancelable:true,clientX:mx,clientY:my,view:window}));});return el.href||el.getAttribute('href')||el.textContent.trim().substring(0,60)||'CLICKED';},
@@ -115,8 +123,8 @@ class MainActivity : AppCompatActivity() {
       idx:-1,list:[],
       sels:['.organic','.serp-item','.OrganicResult','.MjjYud','.g:not(.g-blk)','[data-hveid]','.video-snippet','article'].join(','),
       collect:function(){try{return Array.from(document.querySelectorAll(this.sels)).filter(function(el){var r=el.getBoundingClientRect();return r.height>40&&r.width>80&&r.bottom>0&&r.top<window.innerHeight*3;});}catch(e){return[];}},
-      hl:function(el){document.querySelectorAll('[data-xbr]').forEach(function(e){e.style.outline=e._xbRO||'';e.removeAttribute('data-xbr');});if(!el)return'';el._xbRO=el.style.outline||'';el.style.outline='3px solid #00FF88';el.setAttribute('data-xbr','1');el.scrollIntoView({block:'center',behavior:'smooth'});var t=el.querySelector('h2,h3,.title,a')||el;return(t.textContent||'').trim().replace(/\s+/g,' ').substring(0,80);},
-      clear:function(){document.querySelectorAll('[data-xbr]').forEach(function(e){e.style.outline=e._xbRO||'';e.removeAttribute('data-xbr');});this.idx=-1;this.list=[];},
+      hl:function(el){document.querySelectorAll('[data-xbr]').forEach(function(e){e.style.outline=e._xbRO||'';e.style.boxShadow=e._xbRS||'';e.removeAttribute('data-xbr');});if(!el)return'';el._xbRO=el.style.outline||'';el._xbRS=el.style.boxShadow||'';el.style.setProperty('outline','4px solid #00FF88','important');el.style.setProperty('outline-offset','2px','important');el.style.setProperty('box-shadow','0 0 0 4px rgba(0,255,136,.28), 0 0 18px 5px rgba(0,255,136,.5)','important');el.setAttribute('data-xbr','1');el.scrollIntoView({block:'center',behavior:'smooth'});var t=el.querySelector('h2,h3,.title,a')||el;return(t.textContent||'').trim().replace(/\s+/g,' ').substring(0,80);},
+      clear:function(){document.querySelectorAll('[data-xbr]').forEach(function(e){e.style.outline=e._xbRO||'';e.style.boxShadow=e._xbRS||'';e.removeAttribute('data-xbr');});this.idx=-1;this.list=[];},
       enter:function(){this.list=this.collect();this.idx=-1;return this.list.length;},
       move:function(dir){if(!this.list.length)this.list=this.collect();if(!this.list.length)return'EMPTY';this.idx+=dir;if(this.idx<0)this.idx=0;if(this.idx>=this.list.length)this.idx=this.list.length-1;return this.hl(this.list[this.idx]);},
       click:function(){if(this.idx<0||!this.list[this.idx])return false;var el=this.list[this.idx];this.clear();var link=el.querySelector('a[href]')||el;['mousedown','mouseup','click'].forEach(function(t){link.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window}));});return true;}
@@ -513,6 +521,18 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
             if (code == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) { stopWebTyping(); return true }
             return super.dispatchKeyEvent(event)
         }
+        // Browser toolbar focus: navigate the nav buttons with a clear focus ring
+        if (toolbarFocus && !etUrl.isFocused) {
+            if (event.action != KeyEvent.ACTION_DOWN) return true
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_LEFT  -> { moveToolbar(-1); return true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { moveToolbar(1); return true }
+                KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_BACK -> { exitToolbar(); return true }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { activateToolbar(); return true }
+                KeyEvent.KEYCODE_DPAD_UP -> return true
+            }
+            return true
+        }
         if (findBar.visibility == View.VISIBLE) {
             if (code == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) { hideFindBar(); return true }
         }
@@ -554,7 +574,7 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
             return super.dispatchKeyEvent(event)
         }
         return when (code) {
-            KeyEvent.KEYCODE_DPAD_UP    -> when (mode) { Mode.SCROLL->{ if (webView.scrollY<=0) focusUrlBar() else webView.scrollBy(0,-280); true }; Mode.LINK->linkNav("up"); Mode.RESULTS->{ moveResults(-1); true }; Mode.CURSOR->{ moveCursor(0,-CURSOR_STEP); true } }
+            KeyEvent.KEYCODE_DPAD_UP    -> when (mode) { Mode.SCROLL->{ if (webView.scrollY<=0) enterToolbar() else webView.scrollBy(0,-280); true }; Mode.LINK->linkNav("up"); Mode.RESULTS->{ moveResults(-1); true }; Mode.CURSOR->{ moveCursor(0,-CURSOR_STEP); true } }
             KeyEvent.KEYCODE_DPAD_DOWN  -> when (mode) { Mode.SCROLL->{ webView.scrollBy(0,280); true }; Mode.LINK->linkNav("down"); Mode.RESULTS->{ moveResults(1); true }; Mode.CURSOR->{ moveCursor(0,CURSOR_STEP); true } }
             KeyEvent.KEYCODE_DPAD_LEFT  -> when (mode) { Mode.SCROLL->{ enterElements(); true }; Mode.LINK->linkNav("left"); Mode.RESULTS->{ exitToScroll(); true }; Mode.CURSOR->{ moveCursor(-CURSOR_STEP,0); true } }
             KeyEvent.KEYCODE_DPAD_RIGHT -> when (mode) { Mode.SCROLL->{ enterResults(); true }; Mode.LINK->linkNav("right"); Mode.RESULTS->{ webView.scrollBy(250,0); true }; Mode.CURSOR->{ moveCursor(CURSOR_STEP,0); true } }
@@ -618,7 +638,28 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
     private fun focusUrlBar() {
         etUrl.requestFocus(); etUrl.setText(if (currentUrl=="about:home") "" else currentUrl); etUrl.selectAll()
         etUrl.post { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(etUrl, InputMethodManager.SHOW_FORCED) }
-        hint("Введите адрес или поисковый запрос")
+        hint("Введите адрес или поисковый запрос • НАЗАД — отмена")
+    }
+
+    // ── Browser toolbar navigation (D-pad reaches the nav buttons with a clear focus ring) ──
+    private val toolbarItems: List<View> get() = listOf(btnBack, btnForward, btnReload, etUrl, btnBookmarkAdd, btnTabs, btnMenu)
+
+    private fun enterToolbar() {
+        toolbarFocus = true; toolbarIdx = 3; highlightToolbar()
+        hint("Панель: ←→ между кнопками (назад/вперёд/обновить/адрес/закладка/вкладки/меню) • ОК — нажать • ↓ — к странице")
+    }
+    private fun moveToolbar(d: Int) { toolbarIdx = (toolbarIdx + d).coerceIn(0, toolbarItems.size - 1); highlightToolbar() }
+    private fun highlightToolbar() {
+        toolbarItems.forEachIndexed { i, v -> v.foreground = if (i == toolbarIdx) focusRing else null; v.scaleX = if (i == toolbarIdx) 1.12f else 1f; v.scaleY = v.scaleX }
+        val names = listOf("Назад","Вперёд","Обновить","Адрес","Закладка","Вкладки","Меню")
+        hint("▸ ${names[toolbarIdx]} • ←→ выбор • ОК — нажать • ↓ — к странице")
+    }
+    private fun clearToolbar() { toolbarItems.forEach { it.foreground = null; it.scaleX = 1f; it.scaleY = 1f } }
+    private fun exitToolbar() { toolbarFocus = false; clearToolbar(); setMode(Mode.SCROLL) }
+    private fun activateToolbar() {
+        val v = toolbarItems[toolbarIdx]
+        if (v === etUrl) { toolbarFocus = false; clearToolbar(); focusUrlBar() }
+        else { v.performClick(); if (toolbarIdx == 0 || toolbarIdx == 1) exitToolbar() }  // back/forward → return to page
     }
 
     private fun setupUrlBar() {
