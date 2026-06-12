@@ -60,9 +60,7 @@ class MainActivity : AppCompatActivity() {
     private var cursorX = 0f
     private var cursorY = 0f
     private val CURSOR_STEP = 14
-    private var webInputMode = false
-    private var webInputCx = 0f
-    private var webInputCy = 0f
+    private var webTyping = false
     private var customView: View? = null
     private var customViewCb: WebChromeClient.CustomViewCallback? = null
     private var suggestJob: Job? = null
@@ -134,7 +132,8 @@ class MainActivity : AppCompatActivity() {
       return n;
     },
     bigVideo:function(){var vs=document.querySelectorAll('video');var best=null,bc=0;for(var i=0;i<vs.length;i++){var v=vs[i];var r=v.getBoundingClientRect();if(r.width<2||r.height<2)continue;var c=(r.width*r.height)/(window.innerWidth*window.innerHeight);if(c>bc){bc=c;best=v;}}return (best&&bc>0.15)?best:null;},
-    playBig:function(){var v=this.bigVideo();if(!v)return'NONE';return this.playVideo(v);}
+    playBig:function(){var v=this.bigVideo();if(!v)return'NONE';var s=v.currentSrc||v.src||'';if(s&&!/^blob:/.test(s)&&/\.(mp4|m3u8|webm|mkv|mpd)(\?|#|$)/i.test(s))return'PLAYER:'+s;this.playVideo(v);return'VIDEO_PLAY';},
+    vseek:function(n){var v=this.bigVideo()||document.querySelector('video');if(!v)return'NO';if(n==='pp'){if(v.paused)v.play();else v.pause();return'PP';}try{var d=v.duration||1e9;v.currentTime=Math.max(0,Math.min(d,v.currentTime+(n*1)));}catch(e){}return'SEEK';}
   };
   try{window.open=function(){return null;};}catch(e){}
   if(window._xbObs){window._xbObs.disconnect();}
@@ -436,14 +435,14 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
         when (m) {
             Mode.SCROLL -> {
                 ivModeIcon.setImageResource(R.drawable.ic_mode_scroll)
-                hint("↑↓ листать • ← элементы • → результаты • ОК — выбор • удержать ОК — курсор")
+                hint("Обзор: ↑↓ листать страницу • ← элементы/ссылки • → результаты поиска • ОК — открыть видео/выбрать • удержать ОК — курсор-мышь • ↑ вверху — адрес")
                 cursorView.visibility = View.GONE
             }
-            Mode.LINK   -> ivModeIcon.setImageResource(R.drawable.ic_mode_link)
-            Mode.RESULTS -> ivModeIcon.setImageResource(R.drawable.ic_mode_results)
+            Mode.LINK   -> { ivModeIcon.setImageResource(R.drawable.ic_mode_link); hint("Элементы: стрелки — переход между ссылками/полями • ОК — открыть/ввод • НАЗАД — выход") }
+            Mode.RESULTS -> { ivModeIcon.setImageResource(R.drawable.ic_mode_results); hint("Результаты: ↑↓ между результатами • ОК — открыть • НАЗАД — выход") }
             Mode.CURSOR -> {
                 ivModeIcon.setImageResource(R.drawable.ic_mode_cursor)
-                hint("⊚ Курсор • стрелки — движение • ОК — нажать • НАЗАД — выход")
+                hint("Курсор-мышь: стрелки — двигать • ОК — клик (по видео — плеер, по полю — клавиатура) • НАЗАД — выход")
                 cursorView.visibility = View.VISIBLE
             }
         }
@@ -496,8 +495,11 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
         webView.dispatchTouchEvent(dn)
         handler.postDelayed({ webView.dispatchTouchEvent(up); dn.recycle(); up.recycle() }, 80)
         webView.evaluateJavascript("window._xb?window._xb.clickAt($cursorX,$cursorY):'MISS'") { r ->
-            if (r?.trim()?.removeSurrounding("\"") == "INPUT") handler.postDelayed({ showKeyboard() }, 300)
-            else { webView.isFocusable = false; webView.isFocusableInTouchMode = false }
+            when (r?.trim()?.removeSurrounding("\"")) {
+                "INPUT" -> handler.postDelayed({ startWebTyping() }, 250)  // type directly into the field
+                "VIDEO_PLAY" -> { setMode(Mode.SCROLL); hint("▶ Видео • ←→ ±10с • ОК пауза • НАЗАД выход") }
+                else -> { webView.isFocusable = false; webView.isFocusableInTouchMode = false }
+            }
         }
     }
 
@@ -506,12 +508,27 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
         if ((code == KeyEvent.KEYCODE_SEARCH || code == KeyEvent.KEYCODE_VOICE_ASSIST) && event.action == KeyEvent.ACTION_UP) {
             startVoiceSearch(); return true
         }
+        // While typing into a web page field: let the keyboard/WebView handle keys; BACK finishes typing
+        if (webTyping) {
+            if (code == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) { stopWebTyping(); return true }
+            return super.dispatchKeyEvent(event)
+        }
         if (findBar.visibility == View.VISIBLE) {
             if (code == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) { hideFindBar(); return true }
         }
         if (suggestList.visibility == View.VISIBLE && etUrl.isFocused) {
             if (code == KeyEvent.KEYCODE_DPAD_DOWN && event.action == KeyEvent.ACTION_DOWN) {
                 suggestList.requestFocus(); suggestList.setSelection(0); return true
+            }
+        }
+        // Fullscreen video: standard-player controls (seek + pause)
+        if (customView != null && event.action == KeyEvent.ACTION_DOWN) {
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> { webView.evaluateJavascript("window._xb&&window._xb.vseek(-10)", null); return true }
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { webView.evaluateJavascript("window._xb&&window._xb.vseek(10)", null); return true }
+                KeyEvent.KEYCODE_DPAD_UP -> { webView.evaluateJavascript("window._xb&&window._xb.vseek(-60)", null); return true }
+                KeyEvent.KEYCODE_DPAD_DOWN -> { webView.evaluateJavascript("window._xb&&window._xb.vseek(60)", null); return true }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { webView.evaluateJavascript("window._xb&&window._xb.vseek('pp')", null); return true }
             }
         }
         if (customView != null && code == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
@@ -528,11 +545,8 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
         }
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
         if (etUrl.isFocused) return when (code) {
-            KeyEvent.KEYCODE_BACK -> { if (webInputMode) cancelWebInput() else { suggestList.visibility = View.GONE; dismissKeyboard(); setMode(Mode.SCROLL) }; true }
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                val text = etUrl.text.toString().trim()
-                if (webInputMode) submitWebInput(text) else navigate(text); true
-            }
+            KeyEvent.KEYCODE_BACK -> { suggestList.visibility = View.GONE; dismissKeyboard(); setMode(Mode.SCROLL); true }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { navigate(etUrl.text.toString().trim()); true }
             else -> super.dispatchKeyEvent(event)
         }
         if (panelSide.visibility == View.VISIBLE) {
@@ -559,26 +573,33 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
     private fun handleOk() {
         when (mode) {
             Mode.SCROLL -> {
-                // 1) skip ad if present, 2) play a big video fullscreen, 3) else enter element nav
+                // 1) skip ad, 2) open a page video in the fullscreen player, 3) else enter element nav
                 webView.evaluateJavascript("window._xb?window._xb.skip(false):0") { r ->
                     if ((r?.trim()?.toIntOrNull() ?: 0) > 0) { webView.evaluateJavascript("window._xb.skip(true)", null); hint("Реклама пропущена ✓") }
-                    else webView.evaluateJavascript("window._xb?window._xb.playBig():'NONE'") { v ->
-                        if (v?.trim()?.removeSurrounding("\"") == "VIDEO_PLAY") hint("▶ Воспроизведение") else enterElements()
-                    }
+                    else webView.evaluateJavascript("window._xb?window._xb.playBig():'NONE'") { v -> handleVideoResult(v) }
                 }
             }
             Mode.LINK -> webView.evaluateJavascript("window._xb?window._xb.act():'NONE'") { r ->
                 val res = r?.trim()?.removeSurrounding("\"") ?: "NONE"
                 when {
-                    res.startsWith("INPUT") -> { val p = res.split(":", limit = 4); activateWebInput(p.getOrNull(3) ?: "Введите текст", p.getOrNull(1)?.toFloatOrNull() ?: 0f, p.getOrNull(2)?.toFloatOrNull() ?: 0f) }
+                    res.startsWith("INPUT") -> startWebTyping()  // field is now focused — type directly
                     res.startsWith("VIDEO:") -> { setMode(Mode.SCROLL); openInPlayer(res.removePrefix("VIDEO:"), false) }
                     res.startsWith("AUDIO:") -> { setMode(Mode.SCROLL); openInPlayer(res.removePrefix("AUDIO:"), true) }
-                    res == "VIDEO_PLAY" -> { setMode(Mode.SCROLL); hint("▶ Воспроизведение") }
+                    res == "VIDEO_PLAY" -> { setMode(Mode.SCROLL); hint("▶ Видео • ←→ ±10с • ОК пауза • НАЗАД выход") }
                     else -> setMode(Mode.SCROLL)
                 }
             }
             Mode.RESULTS -> webView.evaluateJavascript("window._xb?window._xb.results.click():false") { exitToScroll() }
             Mode.CURSOR -> clickAtCursor()
+        }
+    }
+
+    private fun handleVideoResult(v: String?) {
+        val r = v?.trim()?.removeSurrounding("\"") ?: "NONE"
+        when {
+            r.startsWith("PLAYER:") -> { setMode(Mode.SCROLL); openInPlayer(r.removePrefix("PLAYER:"), false) }  // direct media → ExoPlayer
+            r == "VIDEO_PLAY" -> hint("▶ Видео • ←→ ±10с • ОК пауза • НАЗАД выход")  // streaming → in-page fullscreen w/ seek
+            else -> enterElements()
         }
     }
 
@@ -604,15 +625,14 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
         etUrl.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) etUrl.post { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(etUrl, InputMethodManager.SHOW_FORCED) } else suggestList.visibility = View.GONE }
         etUrl.setOnEditorActionListener { _, actionId, _ ->
             if (actionId in listOf(EditorInfo.IME_ACTION_GO, EditorInfo.IME_ACTION_SEARCH, EditorInfo.IME_ACTION_DONE)) {
-                val text = etUrl.text.toString().trim()
-                if (webInputMode) submitWebInput(text) else navigate(text); true
+                navigate(etUrl.text.toString().trim()); true
             } else false
         }
         etUrl.addTextChangedListener(object : android.text.TextWatcher {
             override fun afterTextChanged(s: android.text.Editable?) {}
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {
-                if (webInputMode || !etUrl.isFocused) return
+                if (!etUrl.isFocused) return
                 fetchSuggestions(s?.toString()?.trim() ?: "")
             }
         })
@@ -658,26 +678,19 @@ button{background:#00B4FF;color:#fff;border:0;border-radius:12px;font-size:17px;
         (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(window.decorView.windowToken, 0)
         webView.isFocusable = false; webView.isFocusableInTouchMode = false
     }
-    private fun showKeyboard() {
+    // Type DIRECTLY into the focused web page field (the field was focused by act()/clickAt).
+    // The on-screen keyboard routes input to the page input — no proxy through the URL bar.
+    private fun startWebTyping() {
+        webTyping = true
         webView.isFocusable = true; webView.isFocusableInTouchMode = true; webView.requestFocus()
         (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(webView, InputMethodManager.SHOW_FORCED)
+        hint("⌨ Печатайте в поле страницы • Enter — искать • НАЗАД — готово")
     }
-    private fun activateWebInput(fieldHint: String, cx: Float, cy: Float) {
-        webInputMode = true; webInputCx = cx; webInputCy = cy
-        etUrl.tag = webView.url ?: ""; etUrl.setText(""); etUrl.hint = "Ввод: $fieldHint"
-        focusUrlBar(); hint("⌨ $fieldHint • введите и нажмите ОК • НАЗАД — отмена")
-    }
-    private fun submitWebInput(text: String) {
-        webInputMode = false
-        val escaped = text.replace("\\", "\\\\").replace("'", "\\'")
-        webView.evaluateJavascript("window._xb?window._xb.injectText($webInputCx,$webInputCy,'$escaped'):false") {
-            handler.postDelayed({ etUrl.setText(shortUrl(webView.url ?: "")); etUrl.hint = getString(R.string.search_hint); etUrl.tag = null }, 600)
-        }
-        dismissKeyboard(); webView.requestFocus()
-    }
-    private fun cancelWebInput() {
-        webInputMode = false; etUrl.setText(shortUrl(webView.url ?: "")); etUrl.hint = getString(R.string.search_hint); etUrl.tag = null
-        dismissKeyboard(); webView.requestFocus()
+    private fun stopWebTyping() {
+        webTyping = false
+        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(window.decorView.windowToken, 0)
+        webView.isFocusable = false; webView.isFocusableInTouchMode = false
+        setMode(Mode.SCROLL)
     }
 
     private fun setupButtons() {
